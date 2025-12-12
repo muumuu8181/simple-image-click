@@ -1,6 +1,7 @@
 # User data (contains personal screenshots and texts)
 images/
 texts.json
+flows.json
 
 # Python
 __pycache__/

@@ -60,8 +60,14 @@
         .action-item .action-type.paste { background: #17a2b8; }
         .action-item .action-type.wait { background: #ffc107; color: #333; }
         .action-item .action-thumb { width: 40px; height: 30px; object-fit: contain; border-radius: 4px; background: #eee; }
-        .action-item .action-desc { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .action-item .remove { cursor: pointer; color: #dc3545; font-size: 16px; }
+        .action-item .action-desc { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+        .action-item .action-desc:hover { color: #667eea; text-decoration: underline; }
+        .action-item .action-controls { display: flex; gap: 3px; }
+        .action-item .action-controls button { background: #e9ecef; border: none; width: 22px; height: 22px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .action-item .action-controls button:hover { background: #dee2e6; }
+        .action-item .action-controls .up-btn, .action-item .action-controls .down-btn { color: #666; }
+        .action-item .action-controls .remove-btn { background: #f8d7da; color: #dc3545; }
+        .action-item .action-controls .remove-btn:hover { background: #f5c6cb; }
         .empty-message { color: #999; font-style: italic; text-align: center; padding: 20px; }
 
         /* ボタン */
@@ -119,10 +125,26 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         .info { background: #e7f3ff; border: 1px solid #b8daff; color: #004085; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; }
+
+        /* フロー一覧 */
+        .flow-list { max-height: 200px; overflow-y: auto; }
+        .flow-item { display: flex; align-items: center; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #6f42c1; }
+        .flow-item:hover { background: #e9ecef; }
+        .flow-item .flow-name { flex: 1; font-weight: bold; color: #333; cursor: pointer; }
+        .flow-item .flow-name:hover { color: #6f42c1; }
+        .flow-item .flow-meta { font-size: 11px; color: #666; }
+        .flow-item .flow-actions { display: flex; gap: 5px; }
+        .flow-item .flow-actions button { background: #6c757d; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .flow-item .flow-actions .load-btn { background: #6f42c1; }
+        .flow-item .flow-actions .load-btn:hover { background: #5a32a3; }
+        .flow-item .flow-actions .delete-btn { background: #dc3545; }
+        .flow-item .flow-actions .delete-btn:hover { background: #c82333; }
+        .btn-purple { background: #6f42c1; color: white; }
+        .btn-purple:hover { background: #5a32a3; }
     </style>
 </head>
 <body>
-    <div class="version">v0.14</div>
+    <div class="version">v0.19</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -142,6 +164,11 @@
                 <div class="setting-item">
                     <label>待機タイムアウト:</label>
                     <input type="number" id="waitTimeout" value="30" min="1" max="300" step="1">
+                    <span>秒</span>
+                </div>
+                <div class="setting-item">
+                    <label>カーソル速度:</label>
+                    <input type="number" id="cursorSpeed" value="0.5" min="0.1" max="3.0" step="0.1">
                     <span>秒</span>
                 </div>
             </div>
@@ -166,8 +193,20 @@
             <!-- 右: テキスト一覧（広め） -->
             <div class="panel">
                 <h2>テキスト一覧</h2>
-                <button class="btn btn-info" onclick="showAddTextModal()" style="margin-bottom:10px;">+ テキスト追加</button>
+                <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+                    <button class="btn btn-info" onclick="showAddTextModal()">+ テキスト追加</button>
+                    <input type="text" id="textSearch" placeholder="検索（スペース区切りでAND・リアルタイム）" style="flex:1;min-width:150px;padding:8px;border:2px solid #ddd;border-radius:6px;" oninput="searchTexts()">
+                    <button class="btn btn-secondary" onclick="clearTextSearch()" style="padding:8px 12px;">クリア</button>
+                </div>
                 <div id="textGrid" class="item-grid" style="grid-template-columns: 1fr;"></div>
+            </div>
+        </div>
+
+        <!-- フロー一覧 -->
+        <div class="panel">
+            <h2>保存済みフロー</h2>
+            <div id="flowList" class="flow-list">
+                <p class="empty-message">フローを保存するとここに表示されます</p>
             </div>
         </div>
 
@@ -185,6 +224,7 @@
                 </div>
                 <div class="button-group">
                     <button class="btn btn-primary" id="executeBtn" disabled onclick="executeActions()">▶ 実行</button>
+                    <button class="btn btn-purple" id="saveFlowBtn" disabled onclick="showSaveFlowModal()">💾 保存</button>
                     <button class="btn btn-secondary" onclick="clearActions()">クリア</button>
                 </div>
             </div>
@@ -212,10 +252,22 @@
     <div class="modal" id="textModal">
         <div class="modal-content">
             <h3 id="textModalTitle">テキスト追加</h3>
-            <textarea id="textInput" placeholder="貼り付けるテキストを入力..."></textarea>
+            <textarea id="textInput" placeholder="貼り付けるテキストを入力...（Ctrl+Enterで保存）" onkeydown="if(event.ctrlKey && event.key === 'Enter') saveText()"></textarea>
             <div class="modal-buttons">
                 <button class="btn btn-secondary" onclick="hideTextModal()">キャンセル</button>
-                <button class="btn btn-primary" onclick="saveText()">保存</button>
+                <button class="btn btn-primary" onclick="saveText()">保存 (Ctrl+Enter)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- フロー保存モーダル -->
+    <div class="modal" id="flowModal">
+        <div class="modal-content">
+            <h3>フローを保存</h3>
+            <input type="text" id="flowNameInput" placeholder="フロー名を入力（例: 週次報告書作成）" onkeydown="if(event.key === 'Enter') saveFlow()">
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="hideFlowModal()">キャンセル</button>
+                <button class="btn btn-purple" onclick="saveFlow()">保存 (Enter)</button>
             </div>
         </div>
     </div>
@@ -223,16 +275,19 @@
     <script>
         // 状態
         let images = [];
-        let texts = [];
+        let texts = {};  // ID付き辞書形式 {id: {id, text, created_at}}
+        let filteredTextIds = null;  // 検索フィルター結果（nullは全件表示）
         let actions = [];
+        let flows = {};
         let deleteMode = false;
         let addMode = 'click'; // 'click' or 'wait'
-        let editingTextIndex = null;
+        let editingTextId = null;
 
         // 初期化
         document.addEventListener('DOMContentLoaded', async () => {
             await loadImages();
             await loadTexts();
+            await loadFlows();
             setupEventListeners();
             setAddMode('click');
         });
@@ -272,20 +327,46 @@
         // テキスト描画
         function renderTexts() {
             const grid = document.getElementById('textGrid');
-            if (texts.length === 0) {
+            const textIds = filteredTextIds || Object.keys(texts);
+            if (textIds.length === 0) {
                 grid.innerHTML = '<p class="empty-message">テキストを追加してください</p>';
                 return;
             }
-            grid.innerHTML = texts.map((t, i) => `
-                <div class="text-card" onclick="addPasteAction(${i})">
+            grid.innerHTML = textIds.map(id => {
+                const t = texts[id];
+                if (!t) return '';
+                return `
+                <div class="text-card" onclick="addPasteAction('${id}')">
                     <div class="text-actions">
-                        <button class="edit-btn" onclick="event.stopPropagation(); editText(${i})" title="編集">✎</button>
-                        <button class="delete-btn" onclick="event.stopPropagation(); deleteText(${i})" title="削除">✕</button>
+                        <button class="edit-btn" onclick="event.stopPropagation(); editText('${id}')" title="編集">✎</button>
+                        <button class="delete-btn" onclick="event.stopPropagation(); deleteText('${id}')" title="削除">✕</button>
                     </div>
-                    <div class="text-index">[${i + 1}]</div>
-                    <div class="text-content">${escapeHtml(t)}</div>
+                    <div class="text-index">[${id}]</div>
+                    <div class="text-content">${escapeHtml(t.text)}</div>
                 </div>
-            `).join('');
+            `}).join('');
+        }
+
+        // テキスト検索（AND検索）
+        function searchTexts() {
+            const query = document.getElementById('textSearch').value.trim();
+            if (!query) {
+                filteredTextIds = null;
+                renderTexts();
+                return;
+            }
+            const keywords = query.toLowerCase().split(/\s+/).filter(k => k);
+            filteredTextIds = Object.keys(texts).filter(id => {
+                const text = texts[id].text.toLowerCase();
+                return keywords.every(kw => text.includes(kw));
+            });
+            renderTexts();
+        }
+
+        function clearTextSearch() {
+            document.getElementById('textSearch').value = '';
+            filteredTextIds = null;
+            renderTexts();
         }
 
         // HTMLエスケープ
@@ -307,10 +388,19 @@
             renderActions();
         }
 
-        // 貼り付けアクション追加
-        function addPasteAction(index) {
+        // 貼り付けアクション追加（IDベース）/ 差し替え
+        function addPasteAction(textId) {
             if (deleteMode) return;
-            actions.push({ type: 'paste', text_index: index });
+
+            // 差し替えモード中
+            if (swappingActionIndex !== null) {
+                actions[swappingActionIndex].text_id = textId;
+                swappingActionIndex = null;
+                renderActions();
+                return;
+            }
+
+            actions.push({ type: 'paste', text_id: textId });
             renderActions();
         }
 
@@ -320,9 +410,11 @@
             if (actions.length === 0) {
                 list.innerHTML = '<p class="empty-message">アクションを追加...</p>';
                 document.getElementById('executeBtn').disabled = true;
+                document.getElementById('saveFlowBtn').disabled = true;
                 return;
             }
             document.getElementById('executeBtn').disabled = false;
+            document.getElementById('saveFlowBtn').disabled = false;
             list.innerHTML = actions.map((a, i) => {
                 let desc = '';
                 let typeLabel = '';
@@ -339,24 +431,47 @@
                     if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
                 } else if (a.type === 'paste') {
                     typeLabel = '貼付';
-                    desc = `[${a.text_index + 1}] ${texts[a.text_index]?.substring(0, 20) || ''}`;
+                    const textObj = texts[a.text_id];
+                    desc = textObj ? `[${a.text_id}] ${textObj.text.substring(0, 20)}` : `[${a.text_id}] (削除済み)`;
                 }
+                const canSwap = a.type === 'paste';  // テキスト貼り付けのみ差し替え可能
                 return `
                     <div class="action-item ${a.type}">
                         <span class="action-num">${i + 1}.</span>
                         <span class="action-type ${a.type}">${typeLabel}</span>
                         ${thumbHtml}
-                        <span class="action-desc" title="${escapeHtml(desc)}">${escapeHtml(desc)}</span>
-                        <span class="remove" onclick="removeAction(${i})">✕</span>
+                        <span class="action-desc" title="${escapeHtml(desc)}${canSwap ? ' (クリックで差し替え)' : ''}" onclick="${canSwap ? `startSwapText(${i})` : ''}">${escapeHtml(desc)}</span>
+                        <div class="action-controls">
+                            <button class="up-btn" onclick="moveAction(${i}, -1)" ${i === 0 ? 'disabled style="opacity:0.3"' : ''} title="上へ">▲</button>
+                            <button class="down-btn" onclick="moveAction(${i}, 1)" ${i === actions.length - 1 ? 'disabled style="opacity:0.3"' : ''} title="下へ">▼</button>
+                            <button class="remove-btn" onclick="removeAction(${i})" title="削除">✕</button>
+                        </div>
                     </div>
                 `;
             }).join('');
+        }
+
+        // アクション移動（上下）
+        function moveAction(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= actions.length) return;
+            const temp = actions[index];
+            actions[index] = actions[newIndex];
+            actions[newIndex] = temp;
+            renderActions();
         }
 
         // アクション削除
         function removeAction(index) {
             actions.splice(index, 1);
             renderActions();
+        }
+
+        // テキスト差し替え開始
+        let swappingActionIndex = null;
+        function startSwapText(index) {
+            swappingActionIndex = index;
+            alert('テキスト一覧から差し替え先のテキストをクリックしてください');
         }
 
         // アクションクリア
@@ -376,10 +491,11 @@
             document.getElementById('result').className = 'result';
 
             try {
+                const cursorSpeed = parseFloat(document.getElementById('cursorSpeed').value) || 0.5;
                 const res = await fetch('/api/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ actions, interval, confidence, wait_timeout: waitTimeout })
+                    body: JSON.stringify({ actions, interval, confidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed })
                 });
                 const result = await res.json();
                 showResult(result);
@@ -421,30 +537,26 @@
             renderActions();
         }
 
-        // テキスト削除
-        async function deleteText(index) {
-            if (!confirm(`テキスト[${index + 1}]を削除しますか？`)) return;
-            await fetch(`/api/texts/${index}`, { method: 'DELETE' });
-            actions = actions.filter(a => !(a.type === 'paste' && a.text_index === index));
-            actions = actions.map(a => {
-                if (a.type === 'paste' && a.text_index > index) a.text_index--;
-                return a;
-            });
+        // テキスト削除（IDベース）
+        async function deleteText(textId) {
+            if (!confirm(`テキスト[${textId}]を削除しますか？`)) return;
+            await fetch(`/api/texts/${textId}`, { method: 'DELETE' });
+            // フローのテキスト参照は維持（実行時にエラー表示）
             await loadTexts();
             renderActions();
         }
 
-        // テキスト編集
-        function editText(index) {
-            editingTextIndex = index;
+        // テキスト編集（IDベース）
+        function editText(textId) {
+            editingTextId = textId;
             document.getElementById('textModalTitle').textContent = 'テキスト編集';
-            document.getElementById('textInput').value = texts[index];
+            document.getElementById('textInput').value = texts[textId]?.text || '';
             document.getElementById('textModal').classList.add('show');
         }
 
         // テキストモーダル
         function showAddTextModal() {
-            editingTextIndex = null;
+            editingTextId = null;
             document.getElementById('textModalTitle').textContent = 'テキスト追加';
             document.getElementById('textInput').value = '';
             document.getElementById('textModal').classList.add('show');
@@ -458,8 +570,8 @@
             const text = document.getElementById('textInput').value.trim();
             if (!text) { alert('テキストを入力してください'); return; }
 
-            if (editingTextIndex !== null) {
-                await fetch(`/api/texts/${editingTextIndex}`, {
+            if (editingTextId !== null) {
+                await fetch(`/api/texts/${editingTextId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text })
@@ -474,6 +586,77 @@
             hideTextModal();
             await loadTexts();
             renderActions();
+        }
+
+        // フロー管理
+        async function loadFlows() {
+            const res = await fetch('/api/flows');
+            const data = await res.json();
+            flows = data.flows;
+            renderFlows();
+        }
+
+        function renderFlows() {
+            const list = document.getElementById('flowList');
+            const flowNames = Object.keys(flows);
+            if (flowNames.length === 0) {
+                list.innerHTML = '<p class="empty-message">フローを保存するとここに表示されます</p>';
+                return;
+            }
+            list.innerHTML = flowNames.map(name => {
+                const flow = flows[name];
+                const actionCount = flow.actions.length;
+                return `
+                    <div class="flow-item">
+                        <span class="flow-name" onclick="loadFlow('${escapeHtml(name)}')" title="クリックで読み込み">${escapeHtml(name)}</span>
+                        <span class="flow-meta">${actionCount}件 | ${flow.created_at || ''}</span>
+                        <div class="flow-actions">
+                            <button class="load-btn" onclick="loadFlow('${escapeHtml(name)}')">読込</button>
+                            <button class="delete-btn" onclick="deleteFlow('${escapeHtml(name)}')">削除</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function showSaveFlowModal() {
+            document.getElementById('flowNameInput').value = '';
+            document.getElementById('flowModal').classList.add('show');
+            document.getElementById('flowNameInput').focus();
+        }
+
+        function hideFlowModal() {
+            document.getElementById('flowModal').classList.remove('show');
+        }
+
+        async function saveFlow() {
+            const name = document.getElementById('flowNameInput').value.trim();
+            if (!name) { alert('フロー名を入力してください'); return; }
+
+            if (flows[name]) {
+                if (!confirm(`"${name}" は既に存在します。上書きしますか？`)) return;
+            }
+
+            await fetch('/api/flows', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, actions })
+            });
+            hideFlowModal();
+            await loadFlows();
+        }
+
+        function loadFlow(name) {
+            const flow = flows[name];
+            if (!flow) return;
+            actions = JSON.parse(JSON.stringify(flow.actions)); // deep copy
+            renderActions();
+        }
+
+        async function deleteFlow(name) {
+            if (!confirm(`フロー "${name}" を削除しますか？`)) return;
+            await fetch(`/api/flows/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            await loadFlows();
         }
 
         // イベント設定
@@ -492,6 +675,12 @@
             fileInput.addEventListener('change', e => { uploadFiles(e.target.files); e.target.value = ''; });
 
             document.addEventListener('paste', async e => {
+                // 入力フォーム内では画像アップロードをスキップ
+                const activeEl = document.activeElement;
+                if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                    return;
+                }
+
                 const items = e.clipboardData?.items;
                 if (!items) return;
                 for (const item of items) {
