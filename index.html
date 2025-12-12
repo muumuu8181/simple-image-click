@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Image Click</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { color: white; text-align: center; margin-bottom: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        .version { position: fixed; top: 10px; right: 15px; color: rgba(255,255,255,0.7); font-size: 12px; }
+        .panel { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .panel h2 { color: #333; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #667eea; font-size: 18px; }
+        .settings { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+        .setting-item { display: flex; align-items: center; gap: 10px; }
+        .setting-item label { font-weight: bold; color: #555; font-size: 14px; }
+        .setting-item input { width: 80px; padding: 8px 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; }
+        .setting-item input:focus { outline: none; border-color: #667eea; }
+
+        /* 2カラムレイアウト */
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+        /* 画像・テキスト一覧 */
+        .item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; max-height: 300px; overflow-y: auto; }
+        .item-card { border: 2px solid #ddd; border-radius: 8px; padding: 8px; cursor: pointer; transition: all 0.2s; background: #f9f9f9; position: relative; }
+        .item-card:hover { border-color: #667eea; transform: translateY(-2px); }
+        .item-card img { width: 100%; height: 60px; object-fit: contain; border-radius: 4px; background: white; }
+        .item-card .name { text-align: center; margin-top: 5px; font-size: 10px; color: #555; word-break: break-all; }
+        .item-card .delete-btn { position: absolute; top: 3px; left: 3px; background: #dc3545; color: white; border: none; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; font-size: 12px; display: none; align-items: center; justify-content: center; }
+        .delete-mode .item-card .delete-btn { display: flex; }
+
+        /* テキストカード */
+        .text-card { border: 2px solid #17a2b8; background: #e7f7fa; padding: 10px; border-radius: 8px; cursor: pointer; position: relative; }
+        .text-card:hover { border-color: #138496; }
+        .text-card .text-index { font-weight: bold; color: #17a2b8; font-size: 12px; }
+        .text-card .text-content { font-size: 11px; color: #333; margin-top: 3px; word-break: break-all; max-height: 40px; overflow: hidden; }
+        .text-card .text-actions { position: absolute; top: 5px; right: 5px; display: flex; gap: 5px; }
+        .text-card .text-actions button { background: #6c757d; color: white; border: none; width: 22px; height: 22px; border-radius: 4px; cursor: pointer; font-size: 11px; display: none; }
+        .text-card:hover .text-actions button { display: block; }
+        .text-card .text-actions .edit-btn:hover { background: #17a2b8; }
+        .text-card .text-actions .delete-btn { background: #dc3545; }
+        .text-card .text-actions .delete-btn:hover { background: #c82333; }
+
+        /* アクション順序 */
+        .action-list { min-height: 100px; padding: 15px; background: #f5f5f5; border-radius: 8px; }
+        .action-item { display: flex; align-items: center; gap: 10px; background: white; padding: 10px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #667eea; }
+        .action-item.click { border-left-color: #28a745; }
+        .action-item.paste { border-left-color: #17a2b8; }
+        .action-item.wait { border-left-color: #ffc107; }
+        .action-item .action-num { font-weight: bold; color: #666; min-width: 25px; }
+        .action-item .action-type { font-size: 11px; padding: 2px 8px; border-radius: 10px; color: white; }
+        .action-item .action-type.click { background: #28a745; }
+        .action-item .action-type.paste { background: #17a2b8; }
+        .action-item .action-type.wait { background: #ffc107; color: #333; }
+        .action-item .action-thumb { width: 40px; height: 30px; object-fit: contain; border-radius: 4px; background: #eee; }
+        .action-item .action-desc { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .action-item .remove { cursor: pointer; color: #dc3545; font-size: 16px; }
+        .empty-message { color: #999; font-style: italic; text-align: center; padding: 20px; }
+
+        /* ボタン */
+        .button-group { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #5a6268; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-info { background: #17a2b8; color: white; }
+        .btn-warning { background: #ffc107; color: #333; }
+
+        /* アクション追加ボタン */
+        .action-buttons { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
+        .action-buttons .btn { font-size: 12px; padding: 8px 15px; }
+
+        /* モーダル */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.show { display: flex; }
+        .modal-content { background: white; border-radius: 12px; padding: 25px; max-width: 500px; width: 90%; }
+        .modal-content h3 { margin-bottom: 15px; color: #333; }
+        .modal-content input, .modal-content textarea { width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 15px; }
+        .modal-content textarea { height: 100px; resize: vertical; }
+        .modal-buttons { display: flex; gap: 10px; justify-content: flex-end; }
+
+        /* トグル */
+        .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .toggle-switch { position: relative; width: 44px; height: 24px; background: #ccc; border-radius: 12px; cursor: pointer; transition: background 0.3s; }
+        .toggle-switch.active { background: #dc3545; }
+        .toggle-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: white; border-radius: 50%; transition: left 0.3s; }
+        .toggle-switch.active::after { left: 22px; }
+        .toggle-label { font-size: 13px; color: #666; }
+        .toggle-label.active { color: #dc3545; font-weight: bold; }
+
+        /* アップロード */
+        .upload-area { border: 2px dashed #ccc; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 15px; }
+        .upload-area:hover { border-color: #667eea; background: #f8f9ff; }
+        .upload-area.dragover { border-color: #28a745; background: #e8f5e9; }
+        .upload-icon { font-size: 30px; }
+        .upload-text { color: #666; font-size: 12px; }
+        .upload-area input[type="file"] { display: none; }
+
+        /* 結果 */
+        .result { margin-top: 15px; padding: 15px; border-radius: 8px; display: none; }
+        .result.success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; display: block; }
+        .result.error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; display: block; }
+        .result-details { margin-top: 10px; font-size: 13px; }
+        .result-details li { margin: 5px 0; padding: 5px; background: rgba(255,255,255,0.5); border-radius: 4px; list-style: none; }
+
+        .loading { display: none; text-align: center; padding: 20px; }
+        .loading.show { display: block; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .info { background: #e7f3ff; border: 1px solid #b8daff; color: #004085; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="version">v0.14</div>
+    <div class="container">
+        <h1>Simple Image Click</h1>
+
+        <!-- 設定 -->
+        <div class="panel">
+            <h2>設定</h2>
+            <div class="settings">
+                <div class="setting-item">
+                    <label>アクション間隔:</label>
+                    <input type="number" id="interval" value="2" min="0.1" max="60" step="0.1">
+                    <span>秒</span>
+                </div>
+                <div class="setting-item">
+                    <label>認識精度:</label>
+                    <input type="number" id="confidence" value="0.8" min="0.1" max="1.0" step="0.1">
+                </div>
+                <div class="setting-item">
+                    <label>待機タイムアウト:</label>
+                    <input type="number" id="waitTimeout" value="30" min="1" max="300" step="1">
+                    <span>秒</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="two-col">
+            <!-- 左: 画像一覧 -->
+            <div class="panel">
+                <h2>画像一覧</h2>
+                <div class="toggle-row">
+                    <div id="deleteToggle" class="toggle-switch" onclick="toggleDeleteMode()"></div>
+                    <span id="deleteLabel" class="toggle-label">削除モード OFF</span>
+                </div>
+                <div id="uploadArea" class="upload-area">
+                    <div class="upload-icon">📤</div>
+                    <p class="upload-text">クリック / ドラッグ / Ctrl+V</p>
+                    <input type="file" id="fileInput" accept="image/*" multiple>
+                </div>
+                <div id="imageGrid" class="item-grid"></div>
+            </div>
+
+            <!-- 右: テキスト一覧（広め） -->
+            <div class="panel">
+                <h2>テキスト一覧</h2>
+                <button class="btn btn-info" onclick="showAddTextModal()" style="margin-bottom:10px;">+ テキスト追加</button>
+                <div id="textGrid" class="item-grid" style="grid-template-columns: 1fr;"></div>
+            </div>
+        </div>
+
+        <div class="two-col" style="grid-template-columns: 1fr 2fr;">
+            <!-- 左: アクション順序（狭め） -->
+            <div class="panel">
+                <h2>アクション順序</h2>
+                <div class="action-buttons">
+                    <span style="color:#666;font-size:12px;">モード:</span>
+                    <button class="btn btn-success" id="modeClick" onclick="setAddMode('click')" style="padding:5px 10px;font-size:11px;">クリック</button>
+                    <button class="btn btn-warning" id="modeWait" onclick="setAddMode('wait')" style="padding:5px 10px;font-size:11px;">待機</button>
+                </div>
+                <div id="actionList" class="action-list" style="max-height:300px;overflow-y:auto;">
+                    <p class="empty-message">アクションを追加...</p>
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" id="executeBtn" disabled onclick="executeActions()">▶ 実行</button>
+                    <button class="btn btn-secondary" onclick="clearActions()">クリア</button>
+                </div>
+            </div>
+
+            <!-- 右: 結果表示（広め） -->
+            <div class="panel">
+                <h2>実行結果</h2>
+                <div class="info">
+                    画像をクリック → クリック/待機追加 | テキストをクリック → 貼り付け追加
+                </div>
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>実行中...</p>
+                </div>
+                <div class="result" id="result">
+                    <strong id="resultMessage"></strong>
+                    <ul class="result-details" id="resultDetails"></ul>
+                </div>
+                <div id="resultPlaceholder" style="color:#999;text-align:center;padding:40px;">実行結果がここに表示されます</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- テキスト追加モーダル -->
+    <div class="modal" id="textModal">
+        <div class="modal-content">
+            <h3 id="textModalTitle">テキスト追加</h3>
+            <textarea id="textInput" placeholder="貼り付けるテキストを入力..."></textarea>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="hideTextModal()">キャンセル</button>
+                <button class="btn btn-primary" onclick="saveText()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 状態
+        let images = [];
+        let texts = [];
+        let actions = [];
+        let deleteMode = false;
+        let addMode = 'click'; // 'click' or 'wait'
+        let editingTextIndex = null;
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadImages();
+            await loadTexts();
+            setupEventListeners();
+            setAddMode('click');
+        });
+
+        // 画像読み込み
+        async function loadImages() {
+            const res = await fetch('/api/images');
+            const data = await res.json();
+            images = data.images;
+            renderImages();
+        }
+
+        // テキスト読み込み
+        async function loadTexts() {
+            const res = await fetch('/api/texts');
+            const data = await res.json();
+            texts = data.texts;
+            renderTexts();
+        }
+
+        // 画像描画
+        function renderImages() {
+            const grid = document.getElementById('imageGrid');
+            if (images.length === 0) {
+                grid.innerHTML = '<p class="empty-message">画像をアップロードしてください</p>';
+                return;
+            }
+            grid.innerHTML = images.map(img => `
+                <div class="item-card" onclick="addImageAction('${img.name}')">
+                    <button class="delete-btn" onclick="event.stopPropagation(); deleteImage('${img.name}')">✕</button>
+                    <img src="${img.path}" alt="${img.name}">
+                    <div class="name">${img.name}</div>
+                </div>
+            `).join('');
+        }
+
+        // テキスト描画
+        function renderTexts() {
+            const grid = document.getElementById('textGrid');
+            if (texts.length === 0) {
+                grid.innerHTML = '<p class="empty-message">テキストを追加してください</p>';
+                return;
+            }
+            grid.innerHTML = texts.map((t, i) => `
+                <div class="text-card" onclick="addPasteAction(${i})">
+                    <div class="text-actions">
+                        <button class="edit-btn" onclick="event.stopPropagation(); editText(${i})" title="編集">✎</button>
+                        <button class="delete-btn" onclick="event.stopPropagation(); deleteText(${i})" title="削除">✕</button>
+                    </div>
+                    <div class="text-index">[${i + 1}]</div>
+                    <div class="text-content">${escapeHtml(t)}</div>
+                </div>
+            `).join('');
+        }
+
+        // HTMLエスケープ
+        function escapeHtml(str) {
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        // 追加モード設定
+        function setAddMode(mode) {
+            addMode = mode;
+            document.getElementById('modeClick').style.opacity = mode === 'click' ? 1 : 0.5;
+            document.getElementById('modeWait').style.opacity = mode === 'wait' ? 1 : 0.5;
+        }
+
+        // 画像アクション追加
+        function addImageAction(imageName) {
+            if (deleteMode) return;
+            actions.push({ type: addMode, image_name: imageName });
+            renderActions();
+        }
+
+        // 貼り付けアクション追加
+        function addPasteAction(index) {
+            if (deleteMode) return;
+            actions.push({ type: 'paste', text_index: index });
+            renderActions();
+        }
+
+        // アクション描画
+        function renderActions() {
+            const list = document.getElementById('actionList');
+            if (actions.length === 0) {
+                list.innerHTML = '<p class="empty-message">アクションを追加...</p>';
+                document.getElementById('executeBtn').disabled = true;
+                return;
+            }
+            document.getElementById('executeBtn').disabled = false;
+            list.innerHTML = actions.map((a, i) => {
+                let desc = '';
+                let typeLabel = '';
+                let thumbHtml = '';
+                if (a.type === 'click') {
+                    typeLabel = 'クリック';
+                    desc = a.image_name;
+                    const img = images.find(x => x.name === a.image_name);
+                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
+                } else if (a.type === 'wait') {
+                    typeLabel = '待機';
+                    desc = a.image_name;
+                    const img = images.find(x => x.name === a.image_name);
+                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
+                } else if (a.type === 'paste') {
+                    typeLabel = '貼付';
+                    desc = `[${a.text_index + 1}] ${texts[a.text_index]?.substring(0, 20) || ''}`;
+                }
+                return `
+                    <div class="action-item ${a.type}">
+                        <span class="action-num">${i + 1}.</span>
+                        <span class="action-type ${a.type}">${typeLabel}</span>
+                        ${thumbHtml}
+                        <span class="action-desc" title="${escapeHtml(desc)}">${escapeHtml(desc)}</span>
+                        <span class="remove" onclick="removeAction(${i})">✕</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // アクション削除
+        function removeAction(index) {
+            actions.splice(index, 1);
+            renderActions();
+        }
+
+        // アクションクリア
+        function clearActions() {
+            actions = [];
+            renderActions();
+            document.getElementById('result').className = 'result';
+        }
+
+        // 実行
+        async function executeActions() {
+            const interval = parseFloat(document.getElementById('interval').value) || 2;
+            const confidence = parseFloat(document.getElementById('confidence').value) || 0.8;
+            const waitTimeout = parseFloat(document.getElementById('waitTimeout').value) || 30;
+
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('result').className = 'result';
+
+            try {
+                const res = await fetch('/api/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ actions, interval, confidence, wait_timeout: waitTimeout })
+                });
+                const result = await res.json();
+                showResult(result);
+            } catch (e) {
+                showResult({ success: false, message: 'エラー: ' + e.message, details: [] });
+            } finally {
+                document.getElementById('loading').classList.remove('show');
+            }
+        }
+
+        // 結果表示
+        function showResult(result) {
+            document.getElementById('resultPlaceholder').style.display = 'none';
+            const container = document.getElementById('result');
+            container.className = `result ${result.success ? 'success' : 'error'}`;
+            document.getElementById('resultMessage').textContent = result.message;
+            document.getElementById('resultDetails').innerHTML = result.details.map(d => {
+                const icon = d.status === 'success' ? '✅' : d.status === 'timeout' ? '⏱️' : d.status === 'not_found' ? '❓' : '❌';
+                return `<li>${icon} ${d.message}</li>`;
+            }).join('');
+        }
+
+        // 削除モード
+        function toggleDeleteMode() {
+            deleteMode = !deleteMode;
+            document.getElementById('deleteToggle').classList.toggle('active', deleteMode);
+            document.getElementById('deleteLabel').classList.toggle('active', deleteMode);
+            document.getElementById('deleteLabel').textContent = deleteMode ? '削除モード ON' : '削除モード OFF';
+            document.getElementById('imageGrid').classList.toggle('delete-mode', deleteMode);
+            renderTexts();
+        }
+
+        // 画像削除
+        async function deleteImage(name) {
+            if (!deleteMode || !confirm(`"${name}" を削除しますか？`)) return;
+            await fetch(`/api/images/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            actions = actions.filter(a => a.image_name !== name);
+            await loadImages();
+            renderActions();
+        }
+
+        // テキスト削除
+        async function deleteText(index) {
+            if (!confirm(`テキスト[${index + 1}]を削除しますか？`)) return;
+            await fetch(`/api/texts/${index}`, { method: 'DELETE' });
+            actions = actions.filter(a => !(a.type === 'paste' && a.text_index === index));
+            actions = actions.map(a => {
+                if (a.type === 'paste' && a.text_index > index) a.text_index--;
+                return a;
+            });
+            await loadTexts();
+            renderActions();
+        }
+
+        // テキスト編集
+        function editText(index) {
+            editingTextIndex = index;
+            document.getElementById('textModalTitle').textContent = 'テキスト編集';
+            document.getElementById('textInput').value = texts[index];
+            document.getElementById('textModal').classList.add('show');
+        }
+
+        // テキストモーダル
+        function showAddTextModal() {
+            editingTextIndex = null;
+            document.getElementById('textModalTitle').textContent = 'テキスト追加';
+            document.getElementById('textInput').value = '';
+            document.getElementById('textModal').classList.add('show');
+        }
+
+        function hideTextModal() {
+            document.getElementById('textModal').classList.remove('show');
+        }
+
+        async function saveText() {
+            const text = document.getElementById('textInput').value.trim();
+            if (!text) { alert('テキストを入力してください'); return; }
+
+            if (editingTextIndex !== null) {
+                await fetch(`/api/texts/${editingTextIndex}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+            } else {
+                await fetch('/api/texts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+            }
+            hideTextModal();
+            await loadTexts();
+            renderActions();
+        }
+
+        // イベント設定
+        function setupEventListeners() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+
+            uploadArea.addEventListener('click', () => fileInput.click());
+            uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+            uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+            uploadArea.addEventListener('drop', e => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                uploadFiles(e.dataTransfer.files);
+            });
+            fileInput.addEventListener('change', e => { uploadFiles(e.target.files); e.target.value = ''; });
+
+            document.addEventListener('paste', async e => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                for (const item of items) {
+                    if (item.type.startsWith('image/')) {
+                        const blob = item.getAsFile();
+                        if (blob) {
+                            const ext = item.type.split('/')[1] || 'png';
+                            const file = new File([blob], `clipboard_${Date.now()}.${ext}`, { type: item.type });
+                            await uploadFiles([file]);
+                        }
+                    }
+                }
+            });
+        }
+
+        async function uploadFiles(files) {
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+                await fetch('/api/upload', { method: 'POST', body: formData });
+            }
+            await loadImages();
+        }
+    </script>
+</body>
+</html>
