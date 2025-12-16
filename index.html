@@ -23,6 +23,20 @@
         .setting-item input { width: 80px; padding: 8px 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; }
         .setting-item input:focus { outline: none; border-color: #667eea; }
 
+        /* メインレイアウト: 左サイドバー + メインコンテンツ */
+        .main-layout { display: grid; grid-template-columns: 180px 1fr; gap: 20px; }
+        @media (max-width: 900px) { .main-layout { grid-template-columns: 1fr; } }
+
+        /* 左サイドバー設定 */
+        .sidebar-settings { padding: 15px; }
+        .sidebar-settings h2 { font-size: 16px; margin-bottom: 10px; }
+        .sidebar-settings .setting-item { flex-direction: column; align-items: flex-start; gap: 5px; margin-bottom: 12px; }
+        .sidebar-settings .setting-item label { font-size: 12px; }
+        .sidebar-settings .setting-item input { width: 100%; padding: 6px 8px; font-size: 13px; }
+        .sidebar-settings .setting-item span { font-size: 11px; color: #888; }
+        .sidebar-settings .setting-buttons { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+        .sidebar-settings .setting-buttons button { width: 100%; padding: 6px 8px; font-size: 11px; }
+
         /* 2カラムレイアウト */
         .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
@@ -35,6 +49,11 @@
         .item-card .name { text-align: center; margin-top: 5px; font-size: 10px; color: #555; word-break: break-all; }
         .item-card .delete-btn { position: absolute; top: 3px; left: 3px; background: #dc3545; color: white; border: none; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; font-size: 12px; display: none; align-items: center; justify-content: center; }
         .delete-mode .item-card .delete-btn { display: flex; }
+        .item-card .replace-btn { position: absolute; top: 3px; right: 3px; background: #e7f3ff; color: #0066cc; border: none; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+        .item-card:hover .replace-btn { opacity: 1; }
+        .item-card .replace-btn:hover { background: #cce5ff; }
+        .item-card .replace-btn.replacing { background: #ffc107; color: #333; opacity: 1; }
+        .item-card.replacing { border-color: #ffc107; background: #fff3cd; animation: pulse 1s infinite; }
 
         /* テキストカード */
         .text-card { border: 2px solid #17a2b8; background: #e7f7fa; padding: 10px; border-radius: 8px; cursor: pointer; position: relative; }
@@ -68,6 +87,17 @@
         .action-item .action-controls .up-btn, .action-item .action-controls .down-btn { color: #666; }
         .action-item .action-controls .remove-btn { background: #f8d7da; color: #dc3545; }
         .action-item .action-controls .remove-btn:hover { background: #f5c6cb; }
+        .action-item .action-controls .swap-btn { background: #e7f3ff; color: #0066cc; }
+        .action-item .action-controls .swap-btn:hover { background: #cce5ff; }
+        .action-item .action-controls .swap-btn.swapping { background: #ffc107; color: #333; }
+        .action-item.swapping { background: #fff3cd; border-left-color: #ffc107; animation: pulse 1s infinite; }
+        .action-item .action-controls .add-img-btn { background: #d4edda; color: #28a745; font-weight: bold; }
+        .action-item .action-controls .add-img-btn:hover { background: #c3e6cb; }
+        .action-item .action-controls .add-img-btn.adding { background: #28a745; color: white; }
+        .action-item.adding { background: #d4edda; border-left-color: #28a745; animation: pulse 1s infinite; }
+        .action-item.click_or { border-left-color: #6f42c1; }
+        .action-item .action-type.click_or { background: #6f42c1; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .empty-message { color: #999; font-style: italic; text-align: center; padding: 20px; }
 
         /* ボタン */
@@ -117,7 +147,9 @@
         .result.success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; display: block; }
         .result.error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; display: block; }
         .result-details { margin-top: 10px; font-size: 13px; }
-        .result-details li { margin: 5px 0; padding: 5px; background: rgba(255,255,255,0.5); border-radius: 4px; list-style: none; }
+        .result-details li { margin: 5px 0; padding: 8px 10px; border-radius: 4px; list-style: none; }
+        .result-details li.item-success { background: #d4edda; border-left: 4px solid #28a745; color: #155724; }
+        .result-details li.item-error { background: #f8d7da; border-left: 4px solid #dc3545; color: #721c24; }
 
         .loading { display: none; text-align: center; padding: 20px; }
         .loading.show { display: block; }
@@ -137,6 +169,8 @@
         .flow-item .flow-actions button { background: #6c757d; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .flow-item .flow-actions .load-btn { background: #6f42c1; }
         .flow-item .flow-actions .load-btn:hover { background: #5a32a3; }
+        .flow-item .flow-actions .rename-btn { background: #17a2b8; }
+        .flow-item .flow-actions .rename-btn:hover { background: #138496; }
         .flow-item .flow-actions .delete-btn { background: #dc3545; }
         .flow-item .flow-actions .delete-btn:hover { background: #c82333; }
         .btn-purple { background: #6f42c1; color: white; }
@@ -144,55 +178,57 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.19</div>
+    <div class="version">v0.28</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
-        <!-- 設定 -->
-        <div class="panel">
-            <h2>設定</h2>
-            <div class="settings">
+        <div class="main-layout">
+            <!-- 左サイドバー: 設定 -->
+            <div class="panel sidebar-settings">
+                <h2>1. 設定</h2>
                 <div class="setting-item">
-                    <label>アクション間隔:</label>
+                    <label>アクション間隔</label>
                     <input type="number" id="interval" value="2" min="0.1" max="60" step="0.1">
                     <span>秒</span>
                 </div>
                 <div class="setting-item">
-                    <label>認識精度:</label>
-                    <input type="number" id="confidence" value="0.8" min="0.1" max="1.0" step="0.1">
+                    <label>認識精度</label>
+                    <input type="number" id="confidence" value="0.95" min="0.1" max="1.0" step="0.05">
                 </div>
                 <div class="setting-item">
-                    <label>待機タイムアウト:</label>
+                    <label>待機タイムアウト</label>
                     <input type="number" id="waitTimeout" value="30" min="1" max="300" step="1">
                     <span>秒</span>
                 </div>
                 <div class="setting-item">
-                    <label>カーソル速度:</label>
+                    <label>カーソル速度</label>
                     <input type="number" id="cursorSpeed" value="0.5" min="0.1" max="3.0" step="0.1">
                     <span>秒</span>
                 </div>
+                <div class="setting-buttons">
+                    <button class="btn btn-secondary" onclick="saveDefaultSettings()">デフォ保存</button>
+                    <button class="btn btn-secondary" onclick="resetDefaultSettings()">リセット</button>
+                </div>
             </div>
-        </div>
+
+            <!-- メインコンテンツ -->
+            <div class="main-content">
 
         <div class="two-col">
             <!-- 左: 画像一覧 -->
             <div class="panel">
-                <h2>画像一覧</h2>
+                <h2>2. 画像一覧</h2>
                 <div class="toggle-row">
                     <div id="deleteToggle" class="toggle-switch" onclick="toggleDeleteMode()"></div>
                     <span id="deleteLabel" class="toggle-label">削除モード OFF</span>
-                </div>
-                <div id="uploadArea" class="upload-area">
-                    <div class="upload-icon">📤</div>
-                    <p class="upload-text">クリック / ドラッグ / Ctrl+V</p>
-                    <input type="file" id="fileInput" accept="image/*" multiple>
+                    <span style="margin-left:auto;font-size:11px;color:#888;">Ctrl+Vで追加</span>
                 </div>
                 <div id="imageGrid" class="item-grid"></div>
             </div>
 
             <!-- 右: テキスト一覧（広め） -->
             <div class="panel">
-                <h2>テキスト一覧</h2>
+                <h2>3. テキスト一覧</h2>
                 <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
                     <button class="btn btn-info" onclick="showAddTextModal()">+ テキスト追加</button>
                     <input type="text" id="textSearch" placeholder="検索（スペース区切りでAND・リアルタイム）" style="flex:1;min-width:150px;padding:8px;border:2px solid #ddd;border-radius:6px;" oninput="searchTexts()">
@@ -204,34 +240,36 @@
 
         <!-- フロー一覧 -->
         <div class="panel">
-            <h2>保存済みフロー</h2>
-            <div id="flowList" class="flow-list">
+            <h2>4. 保存済みフロー</h2>
+            <div id="flowList" class="flow-list" style="max-height:300px;">
                 <p class="empty-message">フローを保存するとここに表示されます</p>
             </div>
         </div>
 
-        <div class="two-col" style="grid-template-columns: 1fr 2fr;">
-            <!-- 左: アクション順序（狭め） -->
+        <div class="two-col" style="grid-template-columns: 1fr 1fr;">
+            <!-- 左: アクション順序 -->
             <div class="panel">
-                <h2>アクション順序</h2>
+                <h2>5. アクション順序</h2>
                 <div class="action-buttons">
                     <span style="color:#666;font-size:12px;">モード:</span>
                     <button class="btn btn-success" id="modeClick" onclick="setAddMode('click')" style="padding:5px 10px;font-size:11px;">クリック</button>
                     <button class="btn btn-warning" id="modeWait" onclick="setAddMode('wait')" style="padding:5px 10px;font-size:11px;">待機</button>
                 </div>
-                <div id="actionList" class="action-list" style="max-height:300px;overflow-y:auto;">
+                <div id="actionList" class="action-list" style="max-height:400px;overflow-y:auto;">
                     <p class="empty-message">アクションを追加...</p>
                 </div>
                 <div class="button-group">
                     <button class="btn btn-primary" id="executeBtn" disabled onclick="executeActions()">▶ 実行</button>
+                    <button class="btn btn-info" id="templateExecBtn" disabled onclick="showTemplateExecModal()">▶ テンプレ実行</button>
                     <button class="btn btn-purple" id="saveFlowBtn" disabled onclick="showSaveFlowModal()">💾 保存</button>
+                    <button class="btn btn-secondary" id="copyActionsBtn" disabled onclick="copyActionsToClipboard()">📋 コピー</button>
                     <button class="btn btn-secondary" onclick="clearActions()">クリア</button>
                 </div>
             </div>
 
-            <!-- 右: 結果表示（広め） -->
+            <!-- 右: 結果表示（コンパクト） -->
             <div class="panel">
-                <h2>実行結果</h2>
+                <h2>6. 実行結果</h2>
                 <div class="info">
                     画像をクリック → クリック/待機追加 | テキストをクリック → 貼り付け追加
                 </div>
@@ -246,6 +284,9 @@
                 <div id="resultPlaceholder" style="color:#999;text-align:center;padding:40px;">実行結果がここに表示されます</div>
             </div>
         </div>
+
+            </div><!-- /main-content -->
+        </div><!-- /main-layout -->
     </div>
 
     <!-- テキスト追加モーダル -->
@@ -272,6 +313,31 @@
         </div>
     </div>
 
+    <!-- フロー名前変更モーダル -->
+    <div class="modal" id="renameFlowModal">
+        <div class="modal-content">
+            <h3>フロー名を変更</h3>
+            <input type="text" id="renameFlowInput" placeholder="新しいフロー名" onkeydown="if(event.key === 'Enter') confirmRenameFlow()">
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="hideRenameFlowModal()">キャンセル</button>
+                <button class="btn btn-info" onclick="confirmRenameFlow()">変更 (Enter)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- テンプレート実行モーダル -->
+    <div class="modal" id="templateExecModal">
+        <div class="modal-content" style="max-width:600px;">
+            <h3>テンプレート実行 - テキスト選択</h3>
+            <p style="font-size:13px;color:#666;margin-bottom:10px;">貼付アクションで使用するテキストを選択してください</p>
+            <input type="text" id="templateTextSearch" placeholder="検索（スペース区切りでAND）" oninput="filterTemplateTexts()" style="margin-bottom:10px;">
+            <div id="templateTextList" style="max-height:300px;overflow-y:auto;"></div>
+            <div class="modal-buttons" style="margin-top:15px;">
+                <button class="btn btn-secondary" onclick="hideTemplateExecModal()">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // 状態
         let images = [];
@@ -282,15 +348,61 @@
         let deleteMode = false;
         let addMode = 'click'; // 'click' or 'wait'
         let editingTextId = null;
+        let currentFlowName = null;  // 読み込んだフロー名を記憶
+
+        // デフォルト設定値
+        const DEFAULT_SETTINGS = {
+            interval: 2,
+            confidence: 0.95,
+            waitTimeout: 30,
+            cursorSpeed: 0.5
+        };
 
         // 初期化
         document.addEventListener('DOMContentLoaded', async () => {
+            loadSavedSettings();  // 保存された設定を読み込み
             await loadImages();
             await loadTexts();
             await loadFlows();
             setupEventListeners();
             setAddMode('click');
         });
+
+        // 設定の保存・読み込み（localStorage）
+        function loadSavedSettings() {
+            const saved = localStorage.getItem('simpleImageClickSettings');
+            if (saved) {
+                try {
+                    const settings = JSON.parse(saved);
+                    document.getElementById('interval').value = settings.interval ?? DEFAULT_SETTINGS.interval;
+                    document.getElementById('confidence').value = settings.confidence ?? DEFAULT_SETTINGS.confidence;
+                    document.getElementById('waitTimeout').value = settings.waitTimeout ?? DEFAULT_SETTINGS.waitTimeout;
+                    document.getElementById('cursorSpeed').value = settings.cursorSpeed ?? DEFAULT_SETTINGS.cursorSpeed;
+                } catch (e) {
+                    console.error('設定の読み込みに失敗:', e);
+                }
+            }
+        }
+
+        function saveDefaultSettings() {
+            const settings = {
+                interval: parseFloat(document.getElementById('interval').value),
+                confidence: parseFloat(document.getElementById('confidence').value),
+                waitTimeout: parseFloat(document.getElementById('waitTimeout').value),
+                cursorSpeed: parseFloat(document.getElementById('cursorSpeed').value)
+            };
+            localStorage.setItem('simpleImageClickSettings', JSON.stringify(settings));
+            alert('設定をデフォルトとして保存しました');
+        }
+
+        function resetDefaultSettings() {
+            localStorage.removeItem('simpleImageClickSettings');
+            document.getElementById('interval').value = DEFAULT_SETTINGS.interval;
+            document.getElementById('confidence').value = DEFAULT_SETTINGS.confidence;
+            document.getElementById('waitTimeout').value = DEFAULT_SETTINGS.waitTimeout;
+            document.getElementById('cursorSpeed').value = DEFAULT_SETTINGS.cursorSpeed;
+            alert('設定を初期値にリセットしました');
+        }
 
         // 画像読み込み
         async function loadImages() {
@@ -315,13 +427,19 @@
                 grid.innerHTML = '<p class="empty-message">画像をアップロードしてください</p>';
                 return;
             }
-            grid.innerHTML = images.map(img => `
-                <div class="item-card" onclick="addImageAction('${img.name}')">
+            grid.innerHTML = images.map(img => {
+                const isReplacing = replacingImageName === img.name;
+                return `
+                <div class="item-card ${isReplacing ? 'replacing' : ''}" onclick="addImageAction('${img.name}')">
                     <button class="delete-btn" onclick="event.stopPropagation(); deleteImage('${img.name}')">✕</button>
-                    <img src="${img.path}" alt="${img.name}">
+                    ${isReplacing
+                        ? `<button class="replace-btn replacing" onclick="event.stopPropagation(); cancelReplaceImage()" title="キャンセル">✕</button>`
+                        : `<button class="replace-btn" onclick="event.stopPropagation(); startReplaceImage('${img.name}')" title="画像差し替え">🔄</button>`
+                    }
+                    <img src="${img.path}?t=${Date.now()}" alt="${img.name}">
                     <div class="name">${img.name}</div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         // テキスト描画
@@ -384,6 +502,11 @@
         // 画像アクション追加
         function addImageAction(imageName) {
             if (deleteMode) return;
+            // OR画像追加モード中
+            if (addingImageToActionIndex !== null) {
+                addImageToAction(imageName);
+                return;
+            }
             actions.push({ type: addMode, image_name: imageName });
             renderActions();
         }
@@ -407,14 +530,19 @@
         // アクション描画
         function renderActions() {
             const list = document.getElementById('actionList');
+            const hasPasteAction = actions.some(a => a.type === 'paste');
             if (actions.length === 0) {
                 list.innerHTML = '<p class="empty-message">アクションを追加...</p>';
                 document.getElementById('executeBtn').disabled = true;
+                document.getElementById('templateExecBtn').disabled = true;
                 document.getElementById('saveFlowBtn').disabled = true;
+                document.getElementById('copyActionsBtn').disabled = true;
                 return;
             }
             document.getElementById('executeBtn').disabled = false;
+            document.getElementById('templateExecBtn').disabled = !hasPasteAction;  // 貼付があるときだけ有効
             document.getElementById('saveFlowBtn').disabled = false;
+            document.getElementById('copyActionsBtn').disabled = false;
             list.innerHTML = actions.map((a, i) => {
                 let desc = '';
                 let typeLabel = '';
@@ -424,6 +552,13 @@
                     desc = a.image_name;
                     const img = images.find(x => x.name === a.image_name);
                     if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
+                } else if (a.type === 'click_or') {
+                    typeLabel = 'クリックOR';
+                    desc = (a.image_names || []).join(' / ');
+                    thumbHtml = (a.image_names || []).map(name => {
+                        const img = images.find(x => x.name === name);
+                        return img ? `<img class="action-thumb" src="${img.path}" alt="" title="${name}">` : '';
+                    }).join('');
                 } else if (a.type === 'wait') {
                     typeLabel = '待機';
                     desc = a.image_name;
@@ -434,14 +569,26 @@
                     const textObj = texts[a.text_id];
                     desc = textObj ? `[${a.text_id}] ${textObj.text.substring(0, 20)}` : `[${a.text_id}] (削除済み)`;
                 }
-                const canSwap = a.type === 'paste';  // テキスト貼り付けのみ差し替え可能
+                const canSwapText = a.type === 'paste';
+                const canSwapImage = a.type === 'click' || a.type === 'wait';
+                const canAddImage = a.type === 'click' || a.type === 'click_or';
+                const isSwappingThis = swappingImageIndex === i;
+                const isAddingToThis = addingImageToActionIndex === i;
                 return `
-                    <div class="action-item ${a.type}">
+                    <div class="action-item ${a.type} ${isSwappingThis ? 'swapping' : ''} ${isAddingToThis ? 'adding' : ''}">
                         <span class="action-num">${i + 1}.</span>
                         <span class="action-type ${a.type}">${typeLabel}</span>
                         ${thumbHtml}
-                        <span class="action-desc" title="${escapeHtml(desc)}${canSwap ? ' (クリックで差し替え)' : ''}" onclick="${canSwap ? `startSwapText(${i})` : ''}">${escapeHtml(desc)}</span>
+                        <span class="action-desc" title="${escapeHtml(desc)}${canSwapText ? ' (クリックで差し替え)' : ''}" onclick="${canSwapText ? `startSwapText(${i})` : ''}">${escapeHtml(desc)}</span>
                         <div class="action-controls">
+                            ${canAddImage ? (isAddingToThis
+                                ? `<button class="add-img-btn adding" onclick="cancelAddImageToAction()" title="キャンセル">✕</button>`
+                                : `<button class="add-img-btn" onclick="startAddImageToAction(${i})" title="OR画像を追加">+</button>`)
+                            : ''}
+                            ${canSwapImage ? (isSwappingThis
+                                ? `<button class="swap-btn swapping" onclick="cancelSwapImage()" title="キャンセル">✕</button>`
+                                : `<button class="swap-btn" onclick="startSwapImage(${i})" title="画像差し替え">🔄</button>`)
+                            : ''}
                             <button class="up-btn" onclick="moveAction(${i}, -1)" ${i === 0 ? 'disabled style="opacity:0.3"' : ''} title="上へ">▲</button>
                             <button class="down-btn" onclick="moveAction(${i}, 1)" ${i === actions.length - 1 ? 'disabled style="opacity:0.3"' : ''} title="下へ">▼</button>
                             <button class="remove-btn" onclick="removeAction(${i})" title="削除">✕</button>
@@ -474,11 +621,179 @@
             alert('テキスト一覧から差し替え先のテキストをクリックしてください');
         }
 
+        // 画像差し替え開始
+        let swappingImageIndex = null;
+        function startSwapImage(index) {
+            swappingImageIndex = index;
+            renderActions();  // ハイライト表示を更新
+            alert('Ctrl+V で新しい画像を貼り付けてください');
+        }
+
+        // 画像差し替えキャンセル（アクション用）
+        function cancelSwapImage() {
+            swappingImageIndex = null;
+            renderActions();
+        }
+
+        // 画像一覧の差し替え
+        let replacingImageName = null;
+        function startReplaceImage(imageName) {
+            replacingImageName = imageName;
+            renderImages();
+            alert('Ctrl+V で新しい画像を貼り付けてください');
+        }
+
+        function cancelReplaceImage() {
+            replacingImageName = null;
+            renderImages();
+        }
+
+        // OR画像追加モード
+        let addingImageToActionIndex = null;
+        function startAddImageToAction(index) {
+            addingImageToActionIndex = index;
+            renderActions();
+            alert('画像一覧から追加する画像をクリックしてください');
+        }
+
+        function cancelAddImageToAction() {
+            addingImageToActionIndex = null;
+            renderActions();
+        }
+
+        function addImageToAction(imageName) {
+            if (addingImageToActionIndex === null) return;
+            const action = actions[addingImageToActionIndex];
+            if (action.type === 'click') {
+                // click → click_or に変換
+                actions[addingImageToActionIndex] = {
+                    type: 'click_or',
+                    image_names: [action.image_name, imageName]
+                };
+            } else if (action.type === 'click_or') {
+                // 既存のclick_orに追加
+                action.image_names.push(imageName);
+            }
+            addingImageToActionIndex = null;
+            renderActions();
+        }
+
         // アクションクリア
         function clearActions() {
             actions = [];
+            currentFlowName = null;  // フロー名もリセット
             renderActions();
             document.getElementById('result').className = 'result';
+        }
+
+        // アクション一覧をクリップボードにコピー
+        function copyActionsToClipboard() {
+            if (actions.length === 0) return;
+            const lines = actions.map((a, i) => {
+                if (a.type === 'click') {
+                    return `${i + 1}. クリック, ${a.image_name}`;
+                } else if (a.type === 'wait') {
+                    return `${i + 1}. 待機, ${a.image_name}`;
+                } else if (a.type === 'paste') {
+                    const textObj = texts[a.text_id];
+                    const textPreview = textObj ? textObj.text.substring(0, 50) : '(削除済み)';
+                    return `${i + 1}. 貼付, [ID:${a.text_id}] ${textPreview}`;
+                }
+                return `${i + 1}. ${a.type}`;
+            });
+            const flowHeader = currentFlowName ? `フロー: ${currentFlowName}\n` : '';
+            const text = flowHeader + lines.join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                alert('アクション一覧をコピーしました');
+            });
+        }
+
+        // テンプレート実行モーダル
+        let templateFilteredTextIds = null;
+
+        function showTemplateExecModal() {
+            // 貼付アクションがあるか確認
+            const hasPaste = actions.some(a => a.type === 'paste');
+            if (!hasPaste) {
+                alert('貼付アクションがありません');
+                return;
+            }
+            templateFilteredTextIds = null;
+            document.getElementById('templateTextSearch').value = '';
+            renderTemplateTextList();
+            document.getElementById('templateExecModal').classList.add('show');
+        }
+
+        function hideTemplateExecModal() {
+            document.getElementById('templateExecModal').classList.remove('show');
+        }
+
+        function filterTemplateTexts() {
+            const query = document.getElementById('templateTextSearch').value.trim();
+            if (!query) {
+                templateFilteredTextIds = null;
+            } else {
+                const keywords = query.toLowerCase().split(/\s+/).filter(k => k);
+                templateFilteredTextIds = Object.keys(texts).filter(id => {
+                    const text = texts[id].text.toLowerCase();
+                    return keywords.every(kw => text.includes(kw));
+                });
+            }
+            renderTemplateTextList();
+        }
+
+        function renderTemplateTextList() {
+            const list = document.getElementById('templateTextList');
+            const textIds = templateFilteredTextIds || Object.keys(texts);
+            if (textIds.length === 0) {
+                list.innerHTML = '<p class="empty-message">テキストがありません</p>';
+                return;
+            }
+            list.innerHTML = textIds.map(id => {
+                const t = texts[id];
+                if (!t) return '';
+                return `
+                    <div class="text-card" onclick="executeWithTemplate('${id}')" style="cursor:pointer;margin-bottom:8px;">
+                        <div class="text-index">[${id}]</div>
+                        <div class="text-content" style="max-height:60px;">${escapeHtml(t.text)}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function executeWithTemplate(textId) {
+            hideTemplateExecModal();
+
+            // アクションをコピーして貼付のtext_idを差し替え
+            const templateActions = actions.map(a => {
+                if (a.type === 'paste') {
+                    return { ...a, text_id: textId };
+                }
+                return { ...a };
+            });
+
+            // 実行
+            const interval = parseFloat(document.getElementById('interval').value) || 2;
+            const confidence = parseFloat(document.getElementById('confidence').value) || 0.8;
+            const waitTimeout = parseFloat(document.getElementById('waitTimeout').value) || 30;
+            const cursorSpeed = parseFloat(document.getElementById('cursorSpeed').value) || 0.5;
+
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('result').className = 'result';
+
+            try {
+                const res = await fetch('/api/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ actions: templateActions, interval, confidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed })
+                });
+                const result = await res.json();
+                showResult(result);
+            } catch (e) {
+                showResult({ success: false, message: 'エラー: ' + e.message, details: [] });
+            } finally {
+                document.getElementById('loading').classList.remove('show');
+            }
         }
 
         // 実行
@@ -514,7 +829,8 @@
             document.getElementById('resultMessage').textContent = result.message;
             document.getElementById('resultDetails').innerHTML = result.details.map(d => {
                 const icon = d.status === 'success' ? '✅' : d.status === 'timeout' ? '⏱️' : d.status === 'not_found' ? '❓' : '❌';
-                return `<li>${icon} ${d.message}</li>`;
+                const itemClass = d.status === 'success' ? 'item-success' : 'item-error';
+                return `<li class="${itemClass}">${icon} ${d.message}</li>`;
             }).join('');
         }
 
@@ -606,13 +922,15 @@
             list.innerHTML = flowNames.map(name => {
                 const flow = flows[name];
                 const actionCount = flow.actions.length;
+                const escapedName = escapeHtml(name);
                 return `
                     <div class="flow-item">
-                        <span class="flow-name" onclick="loadFlow('${escapeHtml(name)}')" title="クリックで読み込み">${escapeHtml(name)}</span>
+                        <span class="flow-name" onclick="loadFlow('${escapedName}')" title="クリックで読み込み">${escapedName}</span>
                         <span class="flow-meta">${actionCount}件 | ${flow.created_at || ''}</span>
                         <div class="flow-actions">
-                            <button class="load-btn" onclick="loadFlow('${escapeHtml(name)}')">読込</button>
-                            <button class="delete-btn" onclick="deleteFlow('${escapeHtml(name)}')">削除</button>
+                            <button class="load-btn" onclick="loadFlow('${escapedName}')">読込</button>
+                            <button class="rename-btn" onclick="showRenameFlowModal('${escapedName}')">名前変更</button>
+                            <button class="delete-btn" onclick="deleteFlow('${escapedName}')">削除</button>
                         </div>
                     </div>
                 `;
@@ -620,7 +938,7 @@
         }
 
         function showSaveFlowModal() {
-            document.getElementById('flowNameInput').value = '';
+            document.getElementById('flowNameInput').value = currentFlowName || '';
             document.getElementById('flowModal').classList.add('show');
             document.getElementById('flowNameInput').focus();
         }
@@ -650,6 +968,7 @@
             const flow = flows[name];
             if (!flow) return;
             actions = JSON.parse(JSON.stringify(flow.actions)); // deep copy
+            currentFlowName = name;  // フロー名を記憶
             renderActions();
         }
 
@@ -659,21 +978,57 @@
             await loadFlows();
         }
 
+        // フロー名前変更
+        let renamingFlowName = null;
+
+        function showRenameFlowModal(name) {
+            renamingFlowName = name;
+            document.getElementById('renameFlowInput').value = name;
+            document.getElementById('renameFlowModal').classList.add('show');
+            document.getElementById('renameFlowInput').focus();
+            document.getElementById('renameFlowInput').select();
+        }
+
+        function hideRenameFlowModal() {
+            document.getElementById('renameFlowModal').classList.remove('show');
+            renamingFlowName = null;
+        }
+
+        async function confirmRenameFlow() {
+            const newName = document.getElementById('renameFlowInput').value.trim();
+            if (!newName) {
+                alert('フロー名を入力してください');
+                return;
+            }
+            if (newName === renamingFlowName) {
+                hideRenameFlowModal();
+                return;
+            }
+            if (flows[newName]) {
+                alert(`"${newName}" は既に存在します`);
+                return;
+            }
+
+            // 旧フローのデータを取得して新名前で保存、旧名前を削除
+            const flowData = flows[renamingFlowName];
+            await fetch('/api/flows', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName, actions: flowData.actions })
+            });
+            await fetch(`/api/flows/${encodeURIComponent(renamingFlowName)}`, { method: 'DELETE' });
+
+            // 現在読み込み中のフロー名も更新
+            if (currentFlowName === renamingFlowName) {
+                currentFlowName = newName;
+            }
+
+            hideRenameFlowModal();
+            await loadFlows();
+        }
+
         // イベント設定
         function setupEventListeners() {
-            const uploadArea = document.getElementById('uploadArea');
-            const fileInput = document.getElementById('fileInput');
-
-            uploadArea.addEventListener('click', () => fileInput.click());
-            uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
-            uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
-            uploadArea.addEventListener('drop', e => {
-                e.preventDefault();
-                uploadArea.classList.remove('dragover');
-                uploadFiles(e.dataTransfer.files);
-            });
-            fileInput.addEventListener('change', e => { uploadFiles(e.target.files); e.target.value = ''; });
-
             document.addEventListener('paste', async e => {
                 // 入力フォーム内では画像アップロードをスキップ
                 const activeEl = document.activeElement;
@@ -689,7 +1044,25 @@
                         if (blob) {
                             const ext = item.type.split('/')[1] || 'png';
                             const file = new File([blob], `clipboard_${Date.now()}.${ext}`, { type: item.type });
-                            await uploadFiles([file]);
+
+                            // 画像一覧の差し替えモード中
+                            if (replacingImageName !== null) {
+                                await replaceImage(replacingImageName, file);
+                                replacingImageName = null;
+                                await loadImages();
+                                renderActions();  // サムネイル更新
+                            }
+                            // アクションの画像差し替えモード中
+                            else if (swappingImageIndex !== null) {
+                                const uploaded = await uploadFiles([file]);
+                                if (uploaded && uploaded.length > 0) {
+                                    actions[swappingImageIndex].image_name = uploaded[0];
+                                    swappingImageIndex = null;
+                                    renderActions();
+                                }
+                            } else {
+                                await uploadFiles([file]);
+                            }
                         }
                     }
                 }
@@ -697,12 +1070,28 @@
         }
 
         async function uploadFiles(files) {
+            const uploadedNames = [];
             for (const file of files) {
                 const formData = new FormData();
                 formData.append('file', file);
-                await fetch('/api/upload', { method: 'POST', body: formData });
+                const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.filename) uploadedNames.push(data.filename);
+                }
             }
             await loadImages();
+            return uploadedNames;
+        }
+
+        async function replaceImage(imageName, file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetch(`/api/images/${encodeURIComponent(imageName)}`, {
+                method: 'PUT',
+                body: formData
+            });
+            return res.ok;
         }
     </script>
 </body>

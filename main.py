@@ -31,8 +31,9 @@ pyautogui.FAILSAFE = True  # 画面左上にマウスを移動すると停止
 
 class ActionItem(BaseModel):
     """アクション項目"""
-    type: str  # "click", "paste", "wait"
+    type: str  # "click", "paste", "wait", "click_or"
     image_name: str | None = None  # click, wait で使用
+    image_names: list[str] | None = None  # click_or で使用（複数画像）
     text_id: str | None = None  # paste で使用（8桁ID）
     text_index: int | None = None  # 後方互換用（非推奨）
 
@@ -274,6 +275,28 @@ async def upload_image(file: UploadFile = File(...)):
     }
 
 
+@app.put("/api/images/{image_name}")
+async def replace_image(image_name: str, file: UploadFile = File(...)):
+    """既存の画像を差し替える"""
+    file_path = IMAGES_DIR / image_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"画像が見つかりません: {image_name}")
+
+    image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif"}
+    ext = Path(file.filename).suffix.lower()
+    if ext not in image_extensions:
+        raise HTTPException(status_code=400, detail=f"対応していないファイル形式です: {ext}")
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    return {
+        "success": True,
+        "filename": image_name,
+        "message": f"差し替え成功: {image_name}"
+    }
+
+
 @app.delete("/api/images/{image_name}")
 async def delete_image(image_name: str):
     """画像を削除する"""
@@ -300,6 +323,9 @@ async def execute_actions(request: ExecuteRequest):
             if action.type == "click":
                 # クリック
                 result = execute_click(action.image_name, request.confidence)
+            elif action.type == "click_or":
+                # クリック（OR条件：最初に見つかった画像をクリック）
+                result = execute_click_or(action.image_names, request.confidence)
             elif action.type == "paste":
                 # テキスト貼り付け（IDベース）
                 result = execute_paste(action.text_id, texts)
@@ -330,6 +356,36 @@ async def execute_actions(request: ExecuteRequest):
     )
 
 
+def find_best_match_confidence(image_path: str, target_confidence: float) -> tuple[float | None, any]:
+    """画像の最も近いマッチの信頼度を調べる（段階的に閾値を下げて検索）"""
+    # 設定した閾値で見つかるかチェック
+    try:
+        location = pyautogui.locateCenterOnScreen(image_path, confidence=target_confidence)
+        if location is not None:
+            return target_confidence, location
+    except pyautogui.ImageNotFoundException:
+        pass
+    except Exception:
+        pass
+
+    # 見つからない場合、閾値を下げて検索
+    test_confidences = [0.7, 0.6, 0.5, 0.4, 0.3]
+    for conf in test_confidences:
+        if conf >= target_confidence:
+            continue
+        try:
+            location = pyautogui.locateCenterOnScreen(image_path, confidence=conf)
+            if location is not None:
+                # この閾値で見つかった = 実際の信頼度はこの値以上、次の値未満
+                return conf, location
+        except pyautogui.ImageNotFoundException:
+            pass
+        except Exception:
+            pass
+
+    return None, None
+
+
 def execute_click(image_name: str, confidence: float) -> dict:
     """画像をクリック"""
     if not image_name:
@@ -339,12 +395,44 @@ def execute_click(image_name: str, confidence: float) -> dict:
     if not image_path.exists():
         return {"status": "error", "message": f"画像ファイルが見つかりません: {image_name}"}
 
-    location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
-    if location is None:
-        return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name}"}
+    found_conf, location = find_best_match_confidence(str(image_path), confidence)
 
-    pyautogui.click(location)
-    return {"status": "success", "message": f"[クリック] {image_name} (位置: {location})"}
+    if found_conf is not None and found_conf >= confidence:
+        pyautogui.click(location)
+        return {"status": "success", "message": f"[クリック] {image_name} (位置: {location})"}
+
+    if found_conf is not None:
+        return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name} (最大{int(found_conf*100)}%で検出、設定は{int(confidence*100)}%)"}
+
+    return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name} (30%未満、画像が画面にない可能性)"}
+
+
+def execute_click_or(image_names: list[str], confidence: float) -> dict:
+    """複数画像のうち最初に見つかった画像をクリック"""
+    if not image_names or len(image_names) == 0:
+        return {"status": "error", "message": "画像が指定されていません"}
+
+    not_found_details = []
+    for image_name in image_names:
+        image_path = IMAGES_DIR / image_name
+        if not image_path.exists():
+            not_found_details.append(f"{image_name}(ファイルなし)")
+            continue
+
+        found_conf, location = find_best_match_confidence(str(image_path), confidence)
+
+        if found_conf is not None and found_conf >= confidence:
+            pyautogui.click(location)
+            return {"status": "success", "message": f"[クリックOR] {image_name} (位置: {location})"}
+
+        if found_conf is not None:
+            not_found_details.append(f"{image_name}({int(found_conf*100)}%)")
+        else:
+            not_found_details.append(f"{image_name}(30%未満)")
+
+    # どの画像も見つからなかった
+    detail_str = " / ".join(not_found_details)
+    return {"status": "not_found", "message": f"画面上にどの画像も見つかりません: {detail_str} (設定: {int(confidence*100)}%)"}
 
 
 def execute_paste(text_id: str, texts: dict) -> dict:
@@ -392,7 +480,11 @@ def execute_wait(image_name: str, confidence: float, timeout: float, cursor_spee
 
         time.sleep(0.1)  # 画像チェックの間隔
 
-    return {"status": "timeout", "message": f"タイムアウト: {image_name} が {timeout}秒以内に見つかりませんでした"}
+    # タイムアウト時に信頼度を調べる
+    found_conf, _ = find_best_match_confidence(str(image_path), confidence)
+    if found_conf is not None:
+        return {"status": "timeout", "message": f"タイムアウト: {image_name} が {timeout}秒以内に見つかりませんでした (最大{int(found_conf*100)}%、設定は{int(confidence*100)}%)"}
+    return {"status": "timeout", "message": f"タイムアウト: {image_name} が {timeout}秒以内に見つかりませんでした (30%未満、画像が画面にない可能性)"}
 
 
 # 後方互換性のため古いAPIも残す
