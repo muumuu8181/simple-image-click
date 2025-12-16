@@ -22,6 +22,7 @@ app = FastAPI(title="Simple Image Click")
 IMAGES_DIR = Path(__file__).parent / "images"
 TEXTS_FILE = Path(__file__).parent / "texts.json"
 FLOWS_FILE = Path(__file__).parent / "flows.json"  # アクションフロー保存
+LOG_FILE = Path(__file__).parent / "batch_log.txt"  # バッチ実行ログ
 DEFAULT_CLICK_INTERVAL = 2.0  # デフォルトのクリック間隔（秒）
 DEFAULT_WAIT_TIMEOUT = 30.0  # デフォルトの待機タイムアウト（秒）
 
@@ -504,6 +505,23 @@ async def execute_clicks(request: ClickRequest):
         confidence=request.confidence
     )
     return await execute_actions(exec_request)
+
+
+# ログ保存API
+class LogRequest(BaseModel):
+    log: str
+
+@app.post("/api/log")
+async def save_log(request: LogRequest):
+    """ログをファイルに追記"""
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"\n{'='*60}\n")
+        f.write(f"[{timestamp}]\n")
+        f.write(request.log)
+        f.write("\n")
+    return {"success": True}
 
 
 # 画像ファイルを静的ファイルとして配信

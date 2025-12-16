@@ -173,6 +173,8 @@
         .flow-item .flow-actions .rename-btn:hover { background: #138496; }
         .flow-item .flow-actions .delete-btn { background: #dc3545; }
         .flow-item .flow-actions .delete-btn:hover { background: #c82333; }
+        .flow-item .flow-checkbox { width: 18px; height: 18px; cursor: pointer; }
+        .flow-item.selected { background: #e8daff; border-left-color: #6f42c1; }
         .btn-purple { background: #6f42c1; color: white; }
         .btn-purple:hover { background: #5a32a3; }
     </style>
@@ -241,6 +243,10 @@
         <!-- フロー一覧 -->
         <div class="panel">
             <h2>4. 保存済みフロー</h2>
+            <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+                <span id="selectedFlowCount" style="font-size:12px;color:#666;">0件選択中</span>
+                <span id="batchHint" style="font-size:11px;color:#6f42c1;display:none;">→ テキスト一覧から選択して実行</span>
+            </div>
             <div id="flowList" class="flow-list" style="max-height:300px;">
                 <p class="empty-message">フローを保存するとここに表示されます</p>
             </div>
@@ -278,7 +284,10 @@
                     <p>実行中...</p>
                 </div>
                 <div class="result" id="result">
-                    <strong id="resultMessage"></strong>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <strong id="resultMessage"></strong>
+                        <button onclick="copyResult()" style="padding:4px 8px;font-size:12px;cursor:pointer;">📋 コピー</button>
+                    </div>
                     <ul class="result-details" id="resultDetails"></ul>
                 </div>
                 <div id="resultPlaceholder" style="color:#999;text-align:center;padding:40px;">実行結果がここに表示されます</div>
@@ -337,6 +346,7 @@
             </div>
         </div>
     </div>
+
 
     <script>
         // 状態
@@ -492,6 +502,18 @@
             return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
 
+        // 結果をコピー
+        function copyResult() {
+            const msg = document.getElementById('resultMessage').textContent;
+            const details = document.getElementById('resultDetails').innerText;
+            const text = msg + '\n' + details;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('コピーしました');
+            }).catch(e => {
+                prompt('コピーに失敗しました。手動でコピーしてください:', text);
+            });
+        }
+
         // 追加モード設定
         function setAddMode(mode) {
             addMode = mode;
@@ -511,7 +533,7 @@
             renderActions();
         }
 
-        // 貼り付けアクション追加（IDベース）/ 差し替え
+        // 貼り付けアクション追加（IDベース）/ 差し替え / バッチ実行
         function addPasteAction(textId) {
             if (deleteMode) return;
 
@@ -520,6 +542,20 @@
                 actions[swappingActionIndex].text_id = textId;
                 swappingActionIndex = null;
                 renderActions();
+                return;
+            }
+
+            // バッチ実行モード（フローが選択されている場合）
+            if (selectedFlows.size > 0) {
+                const flowNames = Array.from(selectedFlows);
+                const textPreview = texts[textId] ? texts[textId].text.substring(0, 50) + '...' : textId;
+                if (confirm(`選択した ${flowNames.length} 件のフローを順番に実行しますか？\n\nフロー: ${flowNames.join(', ')}\nテキスト: ${textPreview}`)) {
+                    executeBatchFlows(textId).catch(e => {
+                        alert('バッチ実行エラー:\n' + e.name + ': ' + e.message + '\n\nスタック:\n' + e.stack);
+                        console.error('バッチ実行エラー:', e);
+                        document.getElementById('loading').classList.remove('show');
+                    });
+                }
                 return;
             }
 
@@ -912,19 +948,24 @@
             renderFlows();
         }
 
+        let selectedFlows = new Set();
+
         function renderFlows() {
             const list = document.getElementById('flowList');
             const flowNames = Object.keys(flows);
             if (flowNames.length === 0) {
                 list.innerHTML = '<p class="empty-message">フローを保存するとここに表示されます</p>';
+                updateSelectedFlowCount();
                 return;
             }
             list.innerHTML = flowNames.map(name => {
                 const flow = flows[name];
                 const actionCount = flow.actions.length;
                 const escapedName = escapeHtml(name);
+                const isSelected = selectedFlows.has(name);
                 return `
-                    <div class="flow-item">
+                    <div class="flow-item ${isSelected ? 'selected' : ''}">
+                        <input type="checkbox" class="flow-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleFlowSelection('${escapedName}', this.checked)">
                         <span class="flow-name" onclick="loadFlow('${escapedName}')" title="クリックで読み込み">${escapedName}</span>
                         <span class="flow-meta">${actionCount}件 | ${flow.created_at || ''}</span>
                         <div class="flow-actions">
@@ -935,6 +976,22 @@
                     </div>
                 `;
             }).join('');
+            updateSelectedFlowCount();
+        }
+
+        function toggleFlowSelection(flowName, isSelected) {
+            if (isSelected) {
+                selectedFlows.add(flowName);
+            } else {
+                selectedFlows.delete(flowName);
+            }
+            renderFlows();
+        }
+
+        function updateSelectedFlowCount() {
+            const count = selectedFlows.size;
+            document.getElementById('selectedFlowCount').textContent = `${count}件選択中`;
+            document.getElementById('batchHint').style.display = count > 0 ? 'inline' : 'none';
         }
 
         function showSaveFlowModal() {
@@ -1092,6 +1149,161 @@
                 body: formData
             });
             return res.ok;
+        }
+
+        // ログをサーバーに保存
+        async function saveLog(logData) {
+            try {
+                await fetch('/api/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ log: logData })
+                });
+            } catch (e) {
+                console.error('ログ保存失敗:', e);
+            }
+        }
+
+        // バッチ実行
+        async function executeBatchFlows(textId) {
+            // エラーを即座にサーバーに送る
+            const reportError = async (step, error) => {
+                const errorLog = `[ERROR] step=${step}\ntextId=${textId}\nselectedFlows=${JSON.stringify(Array.from(selectedFlows))}\nflowsKeys=${JSON.stringify(Object.keys(flows))}\nerror=${error.name}: ${error.message}\nstack=${error.stack}`;
+                try {
+                    await fetch('/api/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ log: errorLog })
+                    });
+                } catch (e) { console.error('ログ送信失敗', e); }
+            };
+
+            const logs = [];
+            let step = 'init';
+            try {
+                step = 'timestamp';
+                const timestamp = new Date().toISOString();
+                logs.push(`[${timestamp}] バッチ実行開始`);
+                logs.push(`textId: ${textId}`);
+                logs.push(`selectedFlows: ${Array.from(selectedFlows).join(', ')}`);
+
+                step = 'flowNames';
+                const flowNames = Array.from(selectedFlows);
+                if (flowNames.length === 0) {
+                    logs.push('エラー: 選択されたフローがありません');
+                    await saveLog(logs.join('\n'));
+                    alert('選択されたフローがありません');
+                    return;
+                }
+
+                step = 'settings';
+                const interval = parseFloat(document.getElementById('interval').value) || 2;
+                const confidence = parseFloat(document.getElementById('confidence').value) || 0.8;
+                const waitTimeout = parseFloat(document.getElementById('waitTimeout').value) || 30;
+                const cursorSpeed = parseFloat(document.getElementById('cursorSpeed').value) || 0.5;
+                logs.push(`設定: interval=${interval}, confidence=${confidence}, waitTimeout=${waitTimeout}, cursorSpeed=${cursorSpeed}`);
+
+            // ローディング表示
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('result').className = 'result';
+            document.getElementById('resultPlaceholder').style.display = 'none';
+
+            step = 'loop_start';
+            const allResults = [];
+
+            for (let i = 0; i < flowNames.length; i++) {
+                step = `loop_${i}_getFlowName`;
+                const flowName = flowNames[i];
+                logs.push(`\n--- フロー ${i + 1}/${flowNames.length}: ${flowName} ---`);
+
+                step = `loop_${i}_getFlow`;
+                const flow = flows[flowName];
+
+                if (!flow) {
+                    logs.push(`エラー: フロー "${flowName}" が見つかりません`);
+                    logs.push(`利用可能なフロー: ${Object.keys(flows).join(', ')}`);
+                    allResults.push({ flowName, result: { success: false, message: `フロー "${flowName}" が見つかりません`, details: [] } });
+                    continue;
+                }
+
+                step = `loop_${i}_modifyActions`;
+                const modifiedActions = flow.actions.map(a => {
+                    if (a.type === 'paste') {
+                        return { ...a, text_id: textId };
+                    }
+                    return a;
+                });
+                logs.push(`アクション数: ${modifiedActions.length}`);
+
+                try {
+                    const res = await fetch('/api/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            actions: modifiedActions,
+                            interval,
+                            confidence,
+                            wait_timeout: waitTimeout,
+                            cursor_speed: cursorSpeed
+                        })
+                    });
+                    const result = await res.json();
+                    logs.push(`結果: ${result.success ? '成功' : '失敗'} - ${result.message}`);
+                    if (result.details) {
+                        result.details.forEach(d => logs.push(`  - ${typeof d === 'object' ? JSON.stringify(d) : d}`));
+                    }
+                    allResults.push({ flowName, result });
+                } catch (e) {
+                    logs.push(`fetchエラー: ${e.message}`);
+                    allResults.push({ flowName, result: { success: false, message: 'エラー: ' + e.message, details: [] } });
+                }
+
+                if (i < flowNames.length - 1) {
+                    await new Promise(r => setTimeout(r, interval * 1000));
+                }
+            }
+
+            // ローディング非表示
+            document.getElementById('loading').classList.remove('show');
+
+            // 結果集計
+            const successCount = allResults.filter(r => r.result.success).length;
+            logs.push(`\n=== 完了: ${successCount}/${allResults.length} 件成功 ===`);
+
+            // ログ保存
+            await saveLog(logs.join('\n'));
+
+            // 結果表示
+            const allSuccess = allResults.every(r => r.result.success);
+            const container = document.getElementById('result');
+            container.className = `result ${allSuccess ? 'success' : 'error'}`;
+            document.getElementById('resultMessage').textContent = `バッチ実行完了: ${successCount}/${allResults.length} 件成功`;
+            document.getElementById('resultDetails').innerHTML = allResults.map(r => {
+                const isSuccess = r.result.success;
+                const details = r.result.details || [];
+                const detailsHtml = details.map(d => {
+                    if (typeof d === 'object') {
+                        const status = d.success ? '✓' : '✗';
+                        return `<div class="${d.success ? 'item-success' : 'item-error'}" style="margin-left:20px;font-size:12px;">${status} ${escapeHtml(d.action || '')} ${escapeHtml(d.message || '')}</div>`;
+                    }
+                    return `<div style="margin-left:20px;font-size:12px;">${escapeHtml(String(d))}</div>`;
+                }).join('');
+                return `
+                    <li class="${isSuccess ? 'item-success' : 'item-error'}">
+                        <strong>${escapeHtml(r.flowName)}</strong>: ${r.result.message}
+                        ${detailsHtml}
+                    </li>
+                `;
+            }).join('');
+
+            // 選択をクリア
+            selectedFlows.clear();
+            renderFlows();
+            } catch (e) {
+                await reportError(step, e);
+                document.getElementById('loading').classList.remove('show');
+                throw e; // 呼び出し元のcatchに渡す
+            }
         }
     </script>
 </body>
