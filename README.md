@@ -149,6 +149,39 @@ simple-image-click/
 - **フェイルセーフ**: 画面左上にマウスを移動すると強制停止（PyAutoGUI標準機能）
 - **テキスト削除時**: フローは該当テキストIDへの参照を維持。実行時に「見つかりません」エラー
 
+## トラブルシューティング
+
+### Pythonプロセスの強制終了
+
+待機処理中にマウスが動き続けて止まらない場合、Pythonプロセスを強制終了する必要がある。
+
+**❌ 間違ったチェック方法（信頼性が低い）:**
+```bash
+cmd.exe /c "tasklist | findstr python"
+# → 出力が正しく取れない場合があり、プロセスが残っていても空になることがある
+```
+
+**✅ 正しいチェック方法:**
+```bash
+wmic process where "name like '%python%'" get processid,name,commandline
+# → 確実にPythonプロセスを一覧表示できる
+```
+
+**強制終了方法:**
+```bash
+# PIDを指定して終了（上記コマンドでPIDを確認してから）
+wmic process where processid=XXXXX call terminate
+
+# または全Pythonプロセスを終了
+wmic process where "name like '%python%'" call terminate
+```
+
+### 中止ボタンが効かない場合
+
+実行中に「中止」ボタンやEscキーが効かない場合：
+1. 上記の方法でPythonプロセスを強制終了
+2. サーバーを再起動: `python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000`
+
 ## 設計判断メモ
 
 ### なぜテキストをID参照にしたか？

@@ -18,6 +18,9 @@ import pyperclip
 
 app = FastAPI(title="Simple Image Click")
 
+# 実行中止フラグ
+execution_abort_flag = False
+
 # 設定
 IMAGES_DIR = Path(__file__).parent / "images"
 TEXTS_FILE = Path(__file__).parent / "texts.json"
@@ -251,6 +254,14 @@ async def get_settings():
     }
 
 
+@app.post("/api/abort")
+async def abort_execution():
+    """実行を中止"""
+    global execution_abort_flag
+    execution_abort_flag = True
+    return {"success": True, "message": "中止フラグを設定しました"}
+
+
 @app.post("/api/upload")
 async def upload_image(file: UploadFile = File(...)):
     """画像をアップロードする"""
@@ -315,6 +326,9 @@ async def delete_image(image_name: str):
 @app.post("/api/execute", response_model=ExecuteResult)
 async def execute_actions(request: ExecuteRequest):
     """アクションを順番に実行する"""
+    global execution_abort_flag
+    execution_abort_flag = False  # 実行開始時にリセット
+
     if not request.actions:
         raise HTTPException(status_code=400, detail="アクションが選択されていません")
 
@@ -323,6 +337,17 @@ async def execute_actions(request: ExecuteRequest):
     success_count = 0
 
     for i, action in enumerate(request.actions):
+        # 中止チェック
+        if execution_abort_flag:
+            results.append({"status": "aborted", "message": f"[中止] ユーザーにより中止されました"})
+            break
+        # エラー時に画像名を含めるためのコンテキスト情報
+        action_context = ""
+        if action.image_name:
+            action_context = action.image_name
+        elif action.image_names:
+            action_context = " / ".join(action.image_names)
+
         try:
             if action.type == "click":
                 # クリック
@@ -363,7 +388,15 @@ async def execute_actions(request: ExecuteRequest):
             import traceback
             error_detail = traceback.format_exc()
             print(f"エラー詳細: {error_detail}")  # サーバーログに出力
-            results.append({"status": "error", "message": f"エラー: {type(e).__name__}: {str(e)}"})
+            # 画像名とスタックトレースをエラーメッセージに含める
+            error_msg = f"エラー: {type(e).__name__}"
+            if action_context:
+                error_msg += f" ({action_context})"
+            # スタックトレースの最後の行（発生箇所）を追加
+            tb_lines = error_detail.strip().split('\n')
+            if len(tb_lines) >= 2:
+                error_msg += f" [場所: {tb_lines[-2].strip()}]"
+            results.append({"status": "error", "message": error_msg})
 
     return ExecuteResult(
         success=success_count == len(request.actions),
@@ -484,7 +517,17 @@ def execute_wait(image_name: str, confidence: float, timeout: float, cursor_spee
     move_amount = 100  # 移動量（ピクセル）- 見やすく
 
     while time.time() - start_time < timeout:
-        location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
+        # 中止チェック
+        if execution_abort_flag:
+            return {"status": "aborted", "message": f"[待機] 中止されました: {image_name}"}
+
+        try:
+            location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
+        except pyautogui.ImageNotFoundException:
+            location = None
+        except Exception:
+            location = None
+
         if location is not None:
             return {"status": "success", "message": f"[待機] 画像を検出: {image_name} (位置: {location})"}
 
@@ -513,7 +556,12 @@ def execute_wait_disappear(image_name: str, confidence: float, timeout: float, c
         return {"status": "error", "message": f"画像ファイルが見つかりません: {image_name}"}
 
     # まず画像が存在することを確認
-    location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
+    try:
+        location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
+    except Exception as e:
+        print(f"[DEBUG] 消失待機 初回チェック例外: {type(e).__name__}: {e}")
+        location = None
+
     if location is None:
         return {"status": "success", "message": f"[消失待機] 画像は既に画面にありません: {image_name}"}
 
@@ -522,9 +570,15 @@ def execute_wait_disappear(image_name: str, confidence: float, timeout: float, c
     move_amount = 100
 
     while time.time() - start_time < timeout:
+        # 中止チェック
+        if execution_abort_flag:
+            return {"status": "aborted", "message": f"[消失待機] 中止されました: {image_name}"}
+
         try:
             location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
-        except:
+        except pyautogui.ImageNotFoundException:
+            location = None
+        except Exception:
             location = None
 
         if location is None:
@@ -591,6 +645,7 @@ def execute_save_to_file(text_id: str, flow_name: str, texts: dict) -> dict:
         text_content = texts[text_id]["text"]
         filename_base = sanitize_filename(text_content, 30)
     else:
+        text_content = None
         filename_base = f"text_{text_id or 'unknown'}"
 
     # 日付フォルダを作成
@@ -606,6 +661,14 @@ def execute_save_to_file(text_id: str, flow_name: str, texts: dict) -> dict:
         clipboard_content = pyperclip.paste()
     except Exception as e:
         return {"status": "error", "message": f"クリップボード取得エラー: {e}"}
+
+    # クリップボードが空かチェック
+    if not clipboard_content or not clipboard_content.strip():
+        return {"status": "error", "message": f"[ファイル保存] クリップボードが空です。コピー操作を忘れていませんか？"}
+
+    # クリップボードの内容がペーストしたテキストと同じ場合は警告
+    if text_content and clipboard_content.strip() == text_content.strip():
+        return {"status": "error", "message": f"[ファイル保存] クリップボードの内容がプロンプトと同じです。回答をコピーし忘れていませんか？"}
 
     # 保存内容を作成
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

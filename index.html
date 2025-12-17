@@ -188,7 +188,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.33</div>
+    <div class="version">v0.38</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -273,7 +273,7 @@
                     <input type="number" id="waitSecondsInput" value="5" min="0.1" max="300" step="0.1" style="width:50px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
                     <button class="btn btn-secondary" onclick="addWaitSecondsAction()" style="padding:5px 10px;font-size:11px;">秒待機</button>
                     <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
-                    <input type="number" id="pagedownCountInput" value="1" min="1" max="100" step="1" style="width:40px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    <input type="number" id="pagedownCountInput" value="10" min="1" max="100" step="1" style="width:40px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
                     <button class="btn btn-secondary" onclick="addPagedownAction()" style="padding:5px 10px;font-size:11px;">PgDn</button>
                     <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
                     <button class="btn" onclick="addSaveToFileAction()" style="padding:5px 10px;font-size:11px;background:#e83e8c;color:white;">📄保存</button>
@@ -298,7 +298,10 @@
                 </div>
                 <div class="loading" id="loading">
                     <div class="spinner"></div>
-                    <p>実行中...</p>
+                    <p style="margin-bottom:15px;">実行中...</p>
+                    <button id="abortBtn" onclick="abortExecution()" style="padding:20px 60px;font-size:24px;font-weight:bold;background:#dc3545;color:white;border:none;border-radius:12px;cursor:pointer;box-shadow:0 4px 15px rgba(220,53,69,0.4);">🛑 中止 (Esc)</button>
+                    <p style="margin-top:10px;font-size:14px;color:#666;">Escキーでも中止できます</p>
+                    <div id="progressList" style="text-align:left;margin-top:10px;font-size:12px;max-height:200px;overflow-y:auto;"></div>
                 </div>
                 <div class="result" id="result">
                     <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -347,6 +350,17 @@
             <div class="modal-buttons">
                 <button class="btn btn-secondary" onclick="hideRenameFlowModal()">キャンセル</button>
                 <button class="btn btn-info" onclick="confirmRenameFlow()">変更 (Enter)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 画像プレビューモーダル -->
+    <div class="modal" id="imagePreviewModal" onclick="hideImagePreviewModal()">
+        <div class="modal-content" style="max-width:800px;text-align:center;" onclick="event.stopPropagation()">
+            <h3 id="imagePreviewTitle" style="margin-bottom:15px;"></h3>
+            <img id="imagePreviewImg" src="" style="max-width:100%;max-height:70vh;border:2px solid #ddd;border-radius:8px;">
+            <div class="modal-buttons" style="margin-top:15px;">
+                <button class="btn btn-secondary" onclick="hideImagePreviewModal()">閉じる</button>
             </div>
         </div>
     </div>
@@ -834,6 +848,8 @@
             document.getElementById('templateTextSearch').value = '';
             renderTemplateTextList();
             document.getElementById('templateExecModal').classList.add('show');
+            // 検索欄にフォーカス
+            setTimeout(() => document.getElementById('templateTextSearch').focus(), 100);
         }
 
         function hideTemplateExecModal() {
@@ -936,17 +952,51 @@
             }
         }
 
+        // 中止リクエスト
+        async function abortExecution() {
+            try {
+                await fetch('/api/abort', { method: 'POST' });
+                const progressList = document.getElementById('progressList');
+                progressList.innerHTML += '<div style="color:#dc3545;">🛑 中止リクエスト送信...</div>';
+            } catch (e) {
+                console.error('中止リクエスト失敗:', e);
+            }
+        }
+
         // 結果表示
         function showResult(result) {
             document.getElementById('resultPlaceholder').style.display = 'none';
+            document.getElementById('progressList').innerHTML = '';  // 進捗をクリア
             const container = document.getElementById('result');
             container.className = `result ${result.success ? 'success' : 'error'}`;
             document.getElementById('resultMessage').textContent = result.message;
             document.getElementById('resultDetails').innerHTML = result.details.map(d => {
-                const icon = d.status === 'success' ? '✅' : d.status === 'timeout' ? '⏱️' : d.status === 'not_found' ? '❓' : '❌';
+                const icon = d.status === 'success' ? '✅' : d.status === 'timeout' ? '⏱️' : d.status === 'not_found' ? '❓' : d.status === 'aborted' ? '🛑' : '❌';
                 const itemClass = d.status === 'success' ? 'item-success' : 'item-error';
-                return `<li class="${itemClass}">${icon} ${d.message}</li>`;
+                // 画像名をクリック可能にする（成功・エラー両方）
+                let messageHtml = escapeHtml(d.message);
+                // clipboard_XXX.png のパターンをリンク化
+                messageHtml = messageHtml.replace(/(clipboard_\d+\.png)/g, (match) => {
+                    return `<span class="clickable-image" onclick="showImagePreview('${match}')" style="color:#0066cc;text-decoration:underline;cursor:pointer;">${match}</span>`;
+                });
+                return `<li class="${itemClass}">${icon} ${messageHtml}</li>`;
             }).join('');
+        }
+
+        // 画像プレビューモーダル
+        function showImagePreview(imageName) {
+            const img = images.find(x => x.name === imageName);
+            if (!img) {
+                alert(`画像 "${imageName}" が見つかりません`);
+                return;
+            }
+            document.getElementById('imagePreviewTitle').textContent = imageName;
+            document.getElementById('imagePreviewImg').src = img.path + '?t=' + Date.now();
+            document.getElementById('imagePreviewModal').classList.add('show');
+        }
+
+        function hideImagePreviewModal() {
+            document.getElementById('imagePreviewModal').classList.remove('show');
         }
 
         // 削除モード
@@ -1165,6 +1215,16 @@
 
         // イベント設定
         function setupEventListeners() {
+            // Escキーで中止
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape') {
+                    const loading = document.getElementById('loading');
+                    if (loading.classList.contains('show')) {
+                        abortExecution();
+                    }
+                }
+            });
+
             document.addEventListener('paste', async e => {
                 // 入力フォーム内では画像アップロードをスキップ
                 const activeEl = document.activeElement;
