@@ -103,6 +103,8 @@
         .action-item .action-type.wait_seconds { background: #6c757d; }
         .action-item.pagedown { border-left-color: #20c997; }
         .action-item .action-type.pagedown { background: #20c997; }
+        .action-item.save_to_file { border-left-color: #e83e8c; }
+        .action-item .action-type.save_to_file { background: #e83e8c; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .empty-message { color: #999; font-style: italic; text-align: center; padding: 20px; }
 
@@ -186,7 +188,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.32</div>
+    <div class="version">v0.33</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -273,6 +275,8 @@
                     <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
                     <input type="number" id="pagedownCountInput" value="1" min="1" max="100" step="1" style="width:40px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
                     <button class="btn btn-secondary" onclick="addPagedownAction()" style="padding:5px 10px;font-size:11px;">PgDn</button>
+                    <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
+                    <button class="btn" onclick="addSaveToFileAction()" style="padding:5px 10px;font-size:11px;background:#e83e8c;color:white;">📄保存</button>
                 </div>
                 <div id="actionList" class="action-list" style="max-height:400px;overflow-y:auto;">
                     <p class="empty-message">アクションを追加...</p>
@@ -565,6 +569,15 @@
             renderActions();
         }
 
+        // ファイル保存アクション追加
+        function addSaveToFileAction() {
+            // 現在のフローで使われているテキストIDを探す（貼付アクションから）
+            const pasteAction = actions.find(a => a.type === 'paste');
+            const textId = pasteAction ? pasteAction.text_id : null;
+            actions.push({ type: 'save_to_file', text_id: textId, flow_name: currentFlowName });
+            renderActions();
+        }
+
         // 貼り付けアクション追加（IDベース）/ 差し替え / バッチ実行
         function addPasteAction(textId) {
             if (deleteMode) return;
@@ -647,6 +660,11 @@
                 } else if (a.type === 'pagedown') {
                     typeLabel = 'PgDn';
                     desc = `${a.count || 1}回`;
+                } else if (a.type === 'save_to_file') {
+                    typeLabel = '📄保存';
+                    const textObj = a.text_id ? texts[a.text_id] : null;
+                    const textPreview = textObj ? textObj.text.substring(0, 20) + '...' : '(テキスト未指定)';
+                    desc = `${a.flow_name || '(フロー名なし)'} → ${textPreview}`;
                 }
                 const canSwapText = a.type === 'paste';
                 const canSwapImage = a.type === 'click' || a.type === 'wait' || a.type === 'wait_disappear';
@@ -781,6 +799,8 @@
                     return `${i + 1}. 秒待機, ${a.seconds}秒`;
                 } else if (a.type === 'pagedown') {
                     return `${i + 1}. PgDn, ${a.count || 1}回`;
+                } else if (a.type === 'save_to_file') {
+                    return `${i + 1}. ファイル保存, ${a.flow_name || '(名前なし)'}`;
                 } else if (a.type === 'paste') {
                     const textObj = texts[a.text_id];
                     const textPreview = textObj ? textObj.text.substring(0, 50) : '(削除済み)';
@@ -856,9 +876,12 @@
         async function executeWithTemplate(textId) {
             hideTemplateExecModal();
 
-            // アクションをコピーして貼付のtext_idを差し替え
+            // アクションをコピーして貼付とファイル保存のtext_idを差し替え
             const templateActions = actions.map(a => {
                 if (a.type === 'paste') {
+                    return { ...a, text_id: textId };
+                }
+                if (a.type === 'save_to_file') {
                     return { ...a, text_id: textId };
                 }
                 return { ...a };
@@ -1286,6 +1309,9 @@
                 const modifiedActions = flow.actions.map(a => {
                     if (a.type === 'paste') {
                         return { ...a, text_id: textId };
+                    }
+                    if (a.type === 'save_to_file') {
+                        return { ...a, text_id: textId, flow_name: flowName };
                     }
                     return a;
                 });

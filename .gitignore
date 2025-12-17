@@ -3,6 +3,7 @@ images/
 texts.json
 flows.json
 batch_log.txt
+output/
 
 # Python
 __pycache__/

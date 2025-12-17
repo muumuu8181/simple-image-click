@@ -32,13 +32,14 @@ pyautogui.FAILSAFE = True  # 画面左上にマウスを移動すると停止
 
 class ActionItem(BaseModel):
     """アクション項目"""
-    type: str  # "click", "paste", "wait", "click_or", "wait_disappear", "wait_seconds", "pagedown"
+    type: str  # "click", "paste", "wait", "click_or", "wait_disappear", "wait_seconds", "pagedown", "save_to_file"
     image_name: str | None = None  # click, wait, wait_disappear で使用
     image_names: list[str] | None = None  # click_or で使用（複数画像）
-    text_id: str | None = None  # paste で使用（8桁ID）
+    text_id: str | None = None  # paste, save_to_file で使用（8桁ID）
     text_index: int | None = None  # 後方互換用（非推奨）
     seconds: float | None = None  # wait_seconds で使用
     count: int | None = None  # pagedown で使用（回数）
+    flow_name: str | None = None  # save_to_file で使用（フロー名）
 
 
 class ExecuteRequest(BaseModel):
@@ -344,6 +345,9 @@ async def execute_actions(request: ExecuteRequest):
             elif action.type == "pagedown":
                 # PageDownキーを押す
                 result = execute_pagedown(action.count)
+            elif action.type == "save_to_file":
+                # クリップボードの内容をファイルに保存
+                result = execute_save_to_file(action.text_id, action.flow_name, texts)
             else:
                 result = {"status": "error", "message": f"不明なアクション: {action.type}"}
 
@@ -562,6 +566,59 @@ def execute_pagedown(count: int) -> dict:
             time.sleep(0.1)  # 連打時の間隔
 
     return {"status": "success", "message": f"[PageDown] {count}回押しました"}
+
+
+def sanitize_filename(text: str, max_length: int = 30) -> str:
+    """ファイル名に使えない文字を除去し、長さを制限"""
+    import re
+    # ファイル名に使えない文字を除去
+    sanitized = re.sub(r'[\\/:*?"<>|\r\n\t]', '', text)
+    # 空白を_に置換
+    sanitized = re.sub(r'\s+', '_', sanitized)
+    # 長さ制限
+    if len(sanitized) > max_length:
+        sanitized = sanitized[:max_length]
+    return sanitized or "untitled"
+
+
+def execute_save_to_file(text_id: str, flow_name: str, texts: dict) -> dict:
+    """クリップボードの内容をファイルに追記保存"""
+    from datetime import datetime
+    import re
+
+    # テキストIDからファイル名を決定
+    if text_id and text_id in texts:
+        text_content = texts[text_id]["text"]
+        filename_base = sanitize_filename(text_content, 30)
+    else:
+        filename_base = f"text_{text_id or 'unknown'}"
+
+    # 日付フォルダを作成
+    today = datetime.now().strftime("%Y-%m-%d")
+    output_dir = Path(__file__).parent / "output" / today
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ファイルパス
+    filepath = output_dir / f"{filename_base}.txt"
+
+    # クリップボードから内容を取得
+    try:
+        clipboard_content = pyperclip.paste()
+    except Exception as e:
+        return {"status": "error", "message": f"クリップボード取得エラー: {e}"}
+
+    # 保存内容を作成
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    separator = "#" * 50
+    save_content = f"\n{separator}\nフロー: {flow_name or '(名前なし)'}\n日時: {timestamp}\n{separator}\n{clipboard_content}\n"
+
+    # ファイルに追記
+    try:
+        with open(filepath, "a", encoding="utf-8") as f:
+            f.write(save_content)
+        return {"status": "success", "message": f"[ファイル保存] {filepath.name} に追記しました"}
+    except Exception as e:
+        return {"status": "error", "message": f"ファイル保存エラー: {e}"}
 
 
 # 後方互換性のため古いAPIも残す
