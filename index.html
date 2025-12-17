@@ -116,6 +116,12 @@
         .action-item.drag-over { border-top: 3px solid #667eea; margin-top: -3px; }
         .action-item .drag-handle { color: #999; margin-right: 5px; cursor: grab; }
 
+        /* 実行中のリアルタイムステータス */
+        .action-item.exec-success { background: #d4edda; border-left-color: #28a745 !important; }
+        .action-item.exec-error { background: #f8d7da; border-left-color: #dc3545 !important; }
+        .action-item.exec-running { background: #fff3cd; border-left-color: #ffc107 !important; animation: pulse 1s infinite; }
+        .action-item .exec-status { font-size: 14px; margin-left: auto; }
+
         /* ボタン */
         .button-group { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
         .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
@@ -191,12 +197,19 @@
         .flow-item .flow-actions .delete-btn:hover { background: #c82333; }
         .flow-item .flow-checkbox { width: 18px; height: 18px; cursor: pointer; }
         .flow-item.selected { background: #e8daff; border-left-color: #6f42c1; }
+        .flow-order-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; background: #6f42c1; color: white; border-radius: 50%; font-size: 12px; font-weight: bold; flex-shrink: 0; }
         .btn-purple { background: #6f42c1; color: white; }
         .btn-purple:hover { background: #5a32a3; }
+
+        /* 検索タグ */
+        .search-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; background: #e9ecef; border: 1px solid #ced4da; border-radius: 15px; font-size: 11px; color: #495057; cursor: pointer; transition: all 0.2s; }
+        .search-tag:hover { background: #667eea; color: white; border-color: #667eea; }
+        .search-tag .tag-count { font-size: 9px; color: #868e96; }
+        .search-tag:hover .tag-count { color: rgba(255,255,255,0.7); }
     </style>
 </head>
 <body>
-    <div class="version">v0.43</div>
+    <div class="version">v0.50</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -257,6 +270,7 @@
             <!-- 右: テキスト一覧（広め） -->
             <div class="panel">
                 <h2>3. テキスト一覧</h2>
+                <div id="searchTags" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;min-height:24px;"></div>
                 <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
                     <button class="btn btn-info" onclick="showAddTextModal()">+ テキスト追加</button>
                     <input type="text" id="textSearch" placeholder="検索（スペース区切りでAND・リアルタイム）" style="flex:1;min-width:150px;padding:8px;border:2px solid #ddd;border-radius:6px;" oninput="searchTexts()">
@@ -278,7 +292,7 @@
             </div>
         </div>
 
-        <div class="two-col" style="grid-template-columns: 1fr 1fr;">
+        <div class="two-col" style="grid-template-columns: 2fr 3fr;">
             <!-- 左: アクション順序 -->
             <div class="panel">
                 <h2>5. アクション順序</h2>
@@ -288,7 +302,7 @@
                     <button class="btn btn-warning" id="modeWait" onclick="setAddMode('wait')" style="padding:5px 10px;font-size:11px;">表示待機</button>
                     <button class="btn btn-info" id="modeWaitDisappear" onclick="setAddMode('wait_disappear')" style="padding:5px 10px;font-size:11px;">消失待機</button>
                     <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
-                    <input type="number" id="waitSecondsInput" value="5" min="0.1" max="300" step="0.1" style="width:50px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    <input type="number" id="waitSecondsInput" value="10" min="1" max="300" step="1" style="width:50px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
                     <button class="btn btn-secondary" onclick="addWaitSecondsAction()" style="padding:5px 10px;font-size:11px;">秒待機</button>
                     <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
                     <input type="number" id="pagedownCountInput" value="10" min="1" max="100" step="1" style="width:40px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
@@ -424,6 +438,7 @@
             await loadImages();
             await loadTexts();
             await loadFlows();
+            loadSearchTags();  // 検索タグを読み込み
             setupEventListeners();
             setAddMode('click');
         });
@@ -528,8 +543,60 @@
             `}).join('');
         }
 
+        // 検索タグ（頻度追跡）
+        let searchTagCounts = {};
+        const SEARCH_TAG_STORAGE_KEY = 'simpleImageClickSearchTags';
+
+        function loadSearchTags() {
+            const saved = localStorage.getItem(SEARCH_TAG_STORAGE_KEY);
+            if (saved) {
+                try {
+                    searchTagCounts = JSON.parse(saved);
+                } catch (e) {
+                    searchTagCounts = {};
+                }
+            }
+            renderSearchTags();
+        }
+
+        function saveSearchTags() {
+            localStorage.setItem(SEARCH_TAG_STORAGE_KEY, JSON.stringify(searchTagCounts));
+        }
+
+        function incrementSearchTag(keyword) {
+            if (!keyword || keyword.length < 2) return;  // 2文字未満は無視
+            const key = keyword.toLowerCase();
+            searchTagCounts[key] = (searchTagCounts[key] || 0) + 1;
+            saveSearchTags();
+            renderSearchTags();
+        }
+
+        function renderSearchTags() {
+            const container = document.getElementById('searchTags');
+            const sorted = Object.entries(searchTagCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+
+            if (sorted.length === 0) {
+                container.innerHTML = '<span style="font-size:11px;color:#999;">よく使う検索ワードがここに表示されます</span>';
+                return;
+            }
+
+            container.innerHTML = sorted.map(([word, count]) => `
+                <span class="search-tag" onclick="applySearchTag('${escapeHtml(word)}')" title="${count}回使用">
+                    ${escapeHtml(word)}
+                    <span class="tag-count">(${count})</span>
+                </span>
+            `).join('');
+        }
+
+        function applySearchTag(word) {
+            document.getElementById('textSearch').value = word;
+            searchTexts(true);  // タグ経由はカウントしない
+        }
+
         // テキスト検索（AND検索）
-        function searchTexts() {
+        function searchTexts(fromTag = false) {
             const query = document.getElementById('textSearch').value.trim();
             if (!query) {
                 filteredTextIds = null;
@@ -537,6 +604,13 @@
                 return;
             }
             const keywords = query.toLowerCase().split(/\s+/).filter(k => k);
+
+            // タグ経由でなければカウント（Enterキー押下時や、入力完了後）
+            if (!fromTag && keywords.length > 0) {
+                // 最初のキーワードだけカウント（AND検索の主キーワード）
+                incrementSearchTag(keywords[0]);
+            }
+
             filteredTextIds = Object.keys(texts).filter(id => {
                 const text = texts[id].text.toLowerCase();
                 return keywords.every(kw => text.includes(kw));
@@ -599,7 +673,7 @@
 
         // 秒数待機アクション追加
         function addWaitSecondsAction() {
-            const seconds = parseFloat(document.getElementById('waitSecondsInput').value) || 5;
+            const seconds = parseFloat(document.getElementById('waitSecondsInput').value) || 10;
             if (seconds <= 0) {
                 alert('秒数は0より大きい値を入力してください');
                 return;
@@ -993,6 +1067,7 @@
             document.getElementById('loading').classList.add('show');
             document.getElementById('result').className = 'result';
             document.getElementById('progressList').innerHTML = '';
+            clearActionItemStatuses();  // 前回のステータスをクリア
 
             try {
                 const res = await fetch('/api/execute', {
@@ -1032,6 +1107,7 @@
             document.getElementById('loading').classList.add('show');
             document.getElementById('result').className = 'result';
             document.getElementById('progressList').innerHTML = '';
+            clearActionItemStatuses();  // 前回のステータスをクリア
 
             try {
                 const res = await fetch('/api/execute', {
@@ -1104,6 +1180,47 @@
             }
 
             progressList.innerHTML = html;
+
+            // アクションリストにもステータスを反映
+            updateActionItemStatuses(status);
+        }
+
+        // アクションアイテムにリアルタイムステータスを反映
+        function updateActionItemStatuses(status) {
+            const actionItems = document.querySelectorAll('#actionList .action-item');
+            actionItems.forEach((item, i) => {
+                // 既存のステータスクラスを削除
+                item.classList.remove('exec-success', 'exec-error', 'exec-running');
+                // 既存のステータスアイコンを削除
+                const existingStatus = item.querySelector('.exec-status');
+                if (existingStatus) existingStatus.remove();
+
+                if (i < status.results.length) {
+                    // 完了したアクション
+                    const r = status.results[i];
+                    if (r.status === 'success') {
+                        item.classList.add('exec-success');
+                        item.insertAdjacentHTML('beforeend', '<span class="exec-status">✅</span>');
+                    } else {
+                        item.classList.add('exec-error');
+                        item.insertAdjacentHTML('beforeend', '<span class="exec-status">❌</span>');
+                    }
+                } else if (i === status.current_step && status.is_running) {
+                    // 現在実行中
+                    item.classList.add('exec-running');
+                    item.insertAdjacentHTML('beforeend', '<span class="exec-status">⏳</span>');
+                }
+            });
+        }
+
+        // アクションアイテムのステータスをクリア
+        function clearActionItemStatuses() {
+            const actionItems = document.querySelectorAll('#actionList .action-item');
+            actionItems.forEach(item => {
+                item.classList.remove('exec-success', 'exec-error', 'exec-running');
+                const existingStatus = item.querySelector('.exec-status');
+                if (existingStatus) existingStatus.remove();
+            });
         }
 
         // 中止リクエスト
@@ -1241,14 +1358,19 @@
                 updateSelectedFlowCount();
                 return;
             }
+            // チェック順を取得（Setは挿入順を保持）
+            const checkOrder = Array.from(selectedFlows);
             list.innerHTML = flowNames.map(name => {
                 const flow = flows[name];
                 const actionCount = flow.actions.length;
                 const escapedName = escapeHtml(name);
                 const isSelected = selectedFlows.has(name);
+                const orderNum = isSelected ? checkOrder.indexOf(name) + 1 : 0;
+                const orderBadge = orderNum > 0 ? `<span class="flow-order-badge">${orderNum}</span>` : '';
                 return `
                     <div class="flow-item ${isSelected ? 'selected' : ''}">
                         <input type="checkbox" class="flow-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleFlowSelection('${escapedName}', this.checked)">
+                        ${orderBadge}
                         <span class="flow-name" onclick="loadFlow('${escapedName}')" title="クリックで読み込み">${escapedName}</span>
                         <span class="flow-meta">${actionCount}件 | ${flow.created_at || ''}</span>
                         <div class="flow-actions">
@@ -1533,6 +1655,7 @@
                 logs.push(`アクション数: ${modifiedActions.length}`);
 
                 try {
+                    // 実行開始
                     const res = await fetch('/api/execute', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1545,12 +1668,37 @@
                             start_delay: startDelay
                         })
                     });
-                    const result = await res.json();
-                    logs.push(`結果: ${result.success ? '成功' : '失敗'} - ${result.message}`);
-                    if (result.details) {
-                        result.details.forEach(d => logs.push(`  - ${typeof d === 'object' ? JSON.stringify(d) : d}`));
+                    const startResult = await res.json();
+
+                    if (startResult.status === 'started') {
+                        logs.push(`実行開始: ${flowName}`);
+                        // 完了するまでポーリング
+                        let result = null;
+                        while (true) {
+                            await new Promise(r => setTimeout(r, 1000));  // 1秒待機
+                            const statusRes = await fetch('/api/execute/status');
+                            const status = await statusRes.json();
+
+                            if (!status.is_running) {
+                                // 実行完了
+                                const successCount = status.results.filter(r => r.status === 'success').length;
+                                result = {
+                                    success: successCount === status.total_steps,
+                                    message: `${successCount}/${status.total_steps} 件成功`,
+                                    details: status.results
+                                };
+                                break;
+                            }
+                        }
+                        logs.push(`結果: ${result.success ? '成功' : '失敗'} - ${result.message}`);
+                        if (result.details) {
+                            result.details.forEach(d => logs.push(`  - ${typeof d === 'object' ? d.message || JSON.stringify(d) : d}`));
+                        }
+                        allResults.push({ flowName, result });
+                    } else {
+                        logs.push(`開始失敗: ${startResult.detail || JSON.stringify(startResult)}`);
+                        allResults.push({ flowName, result: { success: false, message: startResult.detail || '開始失敗', details: [] } });
                     }
-                    allResults.push({ flowName, result });
                 } catch (e) {
                     logs.push(`fetchエラー: ${e.message}`);
                     allResults.push({ flowName, result: { success: false, message: 'エラー: ' + e.message, details: [] } });
@@ -1581,8 +1729,9 @@
                 const details = r.result.details || [];
                 const detailsHtml = details.map(d => {
                     if (typeof d === 'object') {
-                        const status = d.success ? '✓' : '✗';
-                        return `<div class="${d.success ? 'item-success' : 'item-error'}" style="margin-left:20px;font-size:12px;">${status} ${escapeHtml(d.action || '')} ${escapeHtml(d.message || '')}</div>`;
+                        const isOk = d.status === 'success';
+                        const icon = isOk ? '✓' : '✗';
+                        return `<div class="${isOk ? 'item-success' : 'item-error'}" style="margin-left:20px;font-size:12px;">${icon} ${escapeHtml(d.message || '')}</div>`;
                     }
                     return `<div style="margin-left:20px;font-size:12px;">${escapeHtml(String(d))}</div>`;
                 }).join('');
