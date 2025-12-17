@@ -97,6 +97,12 @@
         .action-item.adding { background: #d4edda; border-left-color: #28a745; animation: pulse 1s infinite; }
         .action-item.click_or { border-left-color: #6f42c1; }
         .action-item .action-type.click_or { background: #6f42c1; }
+        .action-item.wait_disappear { border-left-color: #17a2b8; }
+        .action-item .action-type.wait_disappear { background: #17a2b8; }
+        .action-item.wait_seconds { border-left-color: #6c757d; }
+        .action-item .action-type.wait_seconds { background: #6c757d; }
+        .action-item.pagedown { border-left-color: #20c997; }
+        .action-item .action-type.pagedown { background: #20c997; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .empty-message { color: #999; font-style: italic; text-align: center; padding: 20px; }
 
@@ -180,7 +186,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.28</div>
+    <div class="version">v0.32</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -199,7 +205,7 @@
                 </div>
                 <div class="setting-item">
                     <label>待機タイムアウト</label>
-                    <input type="number" id="waitTimeout" value="30" min="1" max="300" step="1">
+                    <input type="number" id="waitTimeout" value="1800" min="1" max="7200" step="1">
                     <span>秒</span>
                 </div>
                 <div class="setting-item">
@@ -259,7 +265,14 @@
                 <div class="action-buttons">
                     <span style="color:#666;font-size:12px;">モード:</span>
                     <button class="btn btn-success" id="modeClick" onclick="setAddMode('click')" style="padding:5px 10px;font-size:11px;">クリック</button>
-                    <button class="btn btn-warning" id="modeWait" onclick="setAddMode('wait')" style="padding:5px 10px;font-size:11px;">待機</button>
+                    <button class="btn btn-warning" id="modeWait" onclick="setAddMode('wait')" style="padding:5px 10px;font-size:11px;">表示待機</button>
+                    <button class="btn btn-info" id="modeWaitDisappear" onclick="setAddMode('wait_disappear')" style="padding:5px 10px;font-size:11px;">消失待機</button>
+                    <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
+                    <input type="number" id="waitSecondsInput" value="5" min="0.1" max="300" step="0.1" style="width:50px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    <button class="btn btn-secondary" onclick="addWaitSecondsAction()" style="padding:5px 10px;font-size:11px;">秒待機</button>
+                    <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
+                    <input type="number" id="pagedownCountInput" value="1" min="1" max="100" step="1" style="width:40px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    <button class="btn btn-secondary" onclick="addPagedownAction()" style="padding:5px 10px;font-size:11px;">PgDn</button>
                 </div>
                 <div id="actionList" class="action-list" style="max-height:400px;overflow-y:auto;">
                     <p class="empty-message">アクションを追加...</p>
@@ -268,7 +281,7 @@
                     <button class="btn btn-primary" id="executeBtn" disabled onclick="executeActions()">▶ 実行</button>
                     <button class="btn btn-info" id="templateExecBtn" disabled onclick="showTemplateExecModal()">▶ テンプレ実行</button>
                     <button class="btn btn-purple" id="saveFlowBtn" disabled onclick="showSaveFlowModal()">💾 保存</button>
-                    <button class="btn btn-secondary" id="copyActionsBtn" disabled onclick="copyActionsToClipboard()">📋 コピー</button>
+                    <button class="btn btn-secondary" id="copyAllBtn" disabled onclick="copyActionsAndResult()">📋 全コピー</button>
                     <button class="btn btn-secondary" onclick="clearActions()">クリア</button>
                 </div>
             </div>
@@ -364,7 +377,7 @@
         const DEFAULT_SETTINGS = {
             interval: 2,
             confidence: 0.95,
-            waitTimeout: 30,
+            waitTimeout: 1800,
             cursorSpeed: 0.5
         };
 
@@ -507,11 +520,7 @@
             const msg = document.getElementById('resultMessage').textContent;
             const details = document.getElementById('resultDetails').innerText;
             const text = msg + '\n' + details;
-            navigator.clipboard.writeText(text).then(() => {
-                alert('コピーしました');
-            }).catch(e => {
-                prompt('コピーに失敗しました。手動でコピーしてください:', text);
-            });
+            navigator.clipboard.writeText(text);
         }
 
         // 追加モード設定
@@ -519,6 +528,7 @@
             addMode = mode;
             document.getElementById('modeClick').style.opacity = mode === 'click' ? 1 : 0.5;
             document.getElementById('modeWait').style.opacity = mode === 'wait' ? 1 : 0.5;
+            document.getElementById('modeWaitDisappear').style.opacity = mode === 'wait_disappear' ? 1 : 0.5;
         }
 
         // 画像アクション追加
@@ -530,6 +540,28 @@
                 return;
             }
             actions.push({ type: addMode, image_name: imageName });
+            renderActions();
+        }
+
+        // 秒数待機アクション追加
+        function addWaitSecondsAction() {
+            const seconds = parseFloat(document.getElementById('waitSecondsInput').value) || 5;
+            if (seconds <= 0) {
+                alert('秒数は0より大きい値を入力してください');
+                return;
+            }
+            actions.push({ type: 'wait_seconds', seconds: seconds });
+            renderActions();
+        }
+
+        // PageDownアクション追加
+        function addPagedownAction() {
+            const count = parseInt(document.getElementById('pagedownCountInput').value) || 1;
+            if (count < 1) {
+                alert('回数は1以上を入力してください');
+                return;
+            }
+            actions.push({ type: 'pagedown', count: count });
             renderActions();
         }
 
@@ -572,13 +604,13 @@
                 document.getElementById('executeBtn').disabled = true;
                 document.getElementById('templateExecBtn').disabled = true;
                 document.getElementById('saveFlowBtn').disabled = true;
-                document.getElementById('copyActionsBtn').disabled = true;
+                document.getElementById('copyAllBtn').disabled = true;
                 return;
             }
             document.getElementById('executeBtn').disabled = false;
             document.getElementById('templateExecBtn').disabled = !hasPasteAction;  // 貼付があるときだけ有効
             document.getElementById('saveFlowBtn').disabled = false;
-            document.getElementById('copyActionsBtn').disabled = false;
+            document.getElementById('copyAllBtn').disabled = false;
             list.innerHTML = actions.map((a, i) => {
                 let desc = '';
                 let typeLabel = '';
@@ -596,7 +628,7 @@
                         return img ? `<img class="action-thumb" src="${img.path}" alt="" title="${name}">` : '';
                     }).join('');
                 } else if (a.type === 'wait') {
-                    typeLabel = '待機';
+                    typeLabel = '表示待機';
                     desc = a.image_name;
                     const img = images.find(x => x.name === a.image_name);
                     if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
@@ -604,9 +636,20 @@
                     typeLabel = '貼付';
                     const textObj = texts[a.text_id];
                     desc = textObj ? `[${a.text_id}] ${textObj.text.substring(0, 20)}` : `[${a.text_id}] (削除済み)`;
+                } else if (a.type === 'wait_disappear') {
+                    typeLabel = '消失待機';
+                    desc = a.image_name;
+                    const img = images.find(x => x.name === a.image_name);
+                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
+                } else if (a.type === 'wait_seconds') {
+                    typeLabel = '秒待機';
+                    desc = `${a.seconds}秒`;
+                } else if (a.type === 'pagedown') {
+                    typeLabel = 'PgDn';
+                    desc = `${a.count || 1}回`;
                 }
                 const canSwapText = a.type === 'paste';
-                const canSwapImage = a.type === 'click' || a.type === 'wait';
+                const canSwapImage = a.type === 'click' || a.type === 'wait' || a.type === 'wait_disappear';
                 const canAddImage = a.type === 'click' || a.type === 'click_or';
                 const isSwappingThis = swappingImageIndex === i;
                 const isAddingToThis = addingImageToActionIndex === i;
@@ -722,14 +765,22 @@
             document.getElementById('result').className = 'result';
         }
 
-        // アクション一覧をクリップボードにコピー
-        function copyActionsToClipboard() {
+        // アクション一覧＋実行結果をクリップボードにコピー
+        function copyActionsAndResult() {
             if (actions.length === 0) return;
             const lines = actions.map((a, i) => {
                 if (a.type === 'click') {
                     return `${i + 1}. クリック, ${a.image_name}`;
+                } else if (a.type === 'click_or') {
+                    return `${i + 1}. クリックOR, ${(a.image_names || []).join(' / ')}`;
                 } else if (a.type === 'wait') {
-                    return `${i + 1}. 待機, ${a.image_name}`;
+                    return `${i + 1}. 表示待機, ${a.image_name}`;
+                } else if (a.type === 'wait_disappear') {
+                    return `${i + 1}. 消失待機, ${a.image_name}`;
+                } else if (a.type === 'wait_seconds') {
+                    return `${i + 1}. 秒待機, ${a.seconds}秒`;
+                } else if (a.type === 'pagedown') {
+                    return `${i + 1}. PgDn, ${a.count || 1}回`;
                 } else if (a.type === 'paste') {
                     const textObj = texts[a.text_id];
                     const textPreview = textObj ? textObj.text.substring(0, 50) : '(削除済み)';
@@ -738,10 +789,15 @@
                 return `${i + 1}. ${a.type}`;
             });
             const flowHeader = currentFlowName ? `フロー: ${currentFlowName}\n` : '';
-            const text = flowHeader + lines.join('\n');
-            navigator.clipboard.writeText(text).then(() => {
-                alert('アクション一覧をコピーしました');
-            });
+            const actionText = flowHeader + lines.join('\n');
+
+            // 実行結果も取得
+            const resultMsg = document.getElementById('resultMessage').textContent || '';
+            const resultDetails = document.getElementById('resultDetails').innerText || '';
+            const resultText = resultMsg ? `\n\n${resultMsg}\n${resultDetails}` : '';
+
+            const fullText = actionText + resultText;
+            navigator.clipboard.writeText(fullText);
         }
 
         // テンプレート実行モーダル

@@ -24,7 +24,7 @@ TEXTS_FILE = Path(__file__).parent / "texts.json"
 FLOWS_FILE = Path(__file__).parent / "flows.json"  # アクションフロー保存
 LOG_FILE = Path(__file__).parent / "batch_log.txt"  # バッチ実行ログ
 DEFAULT_CLICK_INTERVAL = 2.0  # デフォルトのクリック間隔（秒）
-DEFAULT_WAIT_TIMEOUT = 30.0  # デフォルトの待機タイムアウト（秒）
+DEFAULT_WAIT_TIMEOUT = 1800.0  # デフォルトの待機タイムアウト（秒）= 30分
 
 # PyAutoGUI設定
 pyautogui.FAILSAFE = True  # 画面左上にマウスを移動すると停止
@@ -32,11 +32,13 @@ pyautogui.FAILSAFE = True  # 画面左上にマウスを移動すると停止
 
 class ActionItem(BaseModel):
     """アクション項目"""
-    type: str  # "click", "paste", "wait", "click_or"
-    image_name: str | None = None  # click, wait で使用
+    type: str  # "click", "paste", "wait", "click_or", "wait_disappear", "wait_seconds", "pagedown"
+    image_name: str | None = None  # click, wait, wait_disappear で使用
     image_names: list[str] | None = None  # click_or で使用（複数画像）
     text_id: str | None = None  # paste で使用（8桁ID）
     text_index: int | None = None  # 後方互換用（非推奨）
+    seconds: float | None = None  # wait_seconds で使用
+    count: int | None = None  # pagedown で使用（回数）
 
 
 class ExecuteRequest(BaseModel):
@@ -331,8 +333,17 @@ async def execute_actions(request: ExecuteRequest):
                 # テキスト貼り付け（IDベース）
                 result = execute_paste(action.text_id, texts)
             elif action.type == "wait":
-                # 画像が出るまで待機
+                # 画像が出るまで待機（表示待機）
                 result = execute_wait(action.image_name, request.confidence, request.wait_timeout, request.cursor_speed)
+            elif action.type == "wait_disappear":
+                # 画像が消えるまで待機（消失待機）
+                result = execute_wait_disappear(action.image_name, request.confidence, request.wait_timeout, request.cursor_speed)
+            elif action.type == "wait_seconds":
+                # 指定秒数待機
+                result = execute_wait_seconds(action.seconds)
+            elif action.type == "pagedown":
+                # PageDownキーを押す
+                result = execute_pagedown(action.count)
             else:
                 result = {"status": "error", "message": f"不明なアクション: {action.type}"}
 
@@ -486,6 +497,71 @@ def execute_wait(image_name: str, confidence: float, timeout: float, cursor_spee
     if found_conf is not None:
         return {"status": "timeout", "message": f"タイムアウト: {image_name} が {timeout}秒以内に見つかりませんでした (最大{int(found_conf*100)}%、設定は{int(confidence*100)}%)"}
     return {"status": "timeout", "message": f"タイムアウト: {image_name} が {timeout}秒以内に見つかりませんでした (30%未満、画像が画面にない可能性)"}
+
+
+def execute_wait_disappear(image_name: str, confidence: float, timeout: float, cursor_speed: float = 0.5) -> dict:
+    """画像が消えるまで待機（消失待機）"""
+    if not image_name:
+        return {"status": "error", "message": "画像が指定されていません"}
+
+    image_path = IMAGES_DIR / image_name
+    if not image_path.exists():
+        return {"status": "error", "message": f"画像ファイルが見つかりません: {image_name}"}
+
+    # まず画像が存在することを確認
+    location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
+    if location is None:
+        return {"status": "success", "message": f"[消失待機] 画像は既に画面にありません: {image_name}"}
+
+    start_time = time.time()
+    move_direction = 1
+    move_amount = 100
+
+    while time.time() - start_time < timeout:
+        try:
+            location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
+        except:
+            location = None
+
+        if location is None:
+            elapsed = time.time() - start_time
+            return {"status": "success", "message": f"[消失待機] 画像が消えました: {image_name} ({elapsed:.1f}秒後)"}
+
+        # 待機中を示すためにカーソルを左右にスムーズに動かす
+        current_pos = pyautogui.position()
+        target_x = current_pos[0] + (move_amount * move_direction)
+        smooth_move_cursor(target_x, current_pos[1], cursor_speed)
+        move_direction *= -1
+
+        time.sleep(0.5)  # 画像チェックの間隔（消失待機は少し長めに）
+
+    return {"status": "timeout", "message": f"タイムアウト: {image_name} が {timeout}秒以内に消えませんでした"}
+
+
+def execute_wait_seconds(seconds: float) -> dict:
+    """指定秒数だけ待機（秒数待機）"""
+    if seconds is None or seconds < 0:
+        return {"status": "error", "message": "秒数が指定されていません"}
+
+    time.sleep(seconds)
+    return {"status": "success", "message": f"[秒数待機] {seconds}秒待機しました"}
+
+
+def execute_pagedown(count: int) -> dict:
+    """PageDownキーを指定回数押す（スクロール）"""
+    if count is None or count < 1:
+        count = 1
+
+    # まず現在位置でクリックしてフォーカスを当てる
+    pyautogui.click()
+    time.sleep(0.1)
+
+    for i in range(count):
+        pyautogui.press('pagedown')
+        if i < count - 1:
+            time.sleep(0.1)  # 連打時の間隔
+
+    return {"status": "success", "message": f"[PageDown] {count}回押しました"}
 
 
 # 後方互換性のため古いAPIも残す
