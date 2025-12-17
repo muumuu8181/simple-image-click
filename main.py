@@ -18,7 +18,63 @@ import pyperclip
 
 app = FastAPI(title="Simple Image Click")
 
-# 実行中止フラグ
+# 実行状態管理
+import threading
+import uuid
+
+class ExecutionState:
+    def __init__(self):
+        self.is_running = False
+        self.abort_flag = False
+        self.execution_id = None
+        self.current_step = 0
+        self.total_steps = 0
+        self.results = []
+        self.completed = False
+        self.lock = threading.Lock()
+
+    def start(self, total_steps: int) -> str:
+        with self.lock:
+            if self.is_running:
+                return None  # 既に実行中
+            self.is_running = True
+            self.abort_flag = False
+            self.execution_id = str(uuid.uuid4())[:8]
+            self.current_step = 0
+            self.total_steps = total_steps
+            self.results = []
+            self.completed = False
+            return self.execution_id
+
+    def add_result(self, result: dict):
+        with self.lock:
+            self.results.append(result)
+            self.current_step = len(self.results)
+
+    def finish(self):
+        with self.lock:
+            self.completed = True
+            self.is_running = False
+
+    def abort(self):
+        with self.lock:
+            self.abort_flag = True
+
+    def get_status(self) -> dict:
+        with self.lock:
+            return {
+                "is_running": self.is_running,
+                "execution_id": self.execution_id,
+                "current_step": self.current_step,
+                "total_steps": self.total_steps,
+                "results": list(self.results),
+                "completed": self.completed,
+                "aborted": self.abort_flag
+            }
+
+execution_state = ExecutionState()
+
+# 後方互換用（古いコードで参照している場合）
 execution_abort_flag = False
 
 # 設定
@@ -49,9 +105,11 @@ class ExecuteRequest(BaseModel):
     """実行リクエスト"""
     actions: list[ActionItem]
     interval: float = DEFAULT_CLICK_INTERVAL
-    confidence: float = 0.8
+    confidence: float = 0.95
+    min_confidence: float = 0.7  # 最低認識精度（ここまで下げて試す）
     wait_timeout: float = DEFAULT_WAIT_TIMEOUT
     cursor_speed: float = 0.5  # カーソル移動速度（秒）
+    start_delay: float = 0.0  # 開始前待機（秒）- 最初のアクション前に待つ
 
 
 class ExecuteResult(BaseModel):
@@ -259,7 +317,14 @@ async def abort_execution():
     """実行を中止"""
     global execution_abort_flag
     execution_abort_flag = True
+    execution_state.abort()
     return {"success": True, "message": "中止フラグを設定しました"}
+
+
+@app.get("/api/execute/status")
+async def get_execution_status():
+    """実行状態を取得"""
+    return execution_state.get_status()
 
 
 @app.post("/api/upload")
@@ -323,86 +388,122 @@ async def delete_image(image_name: str):
     return {"success": True, "message": f"削除しました: {image_name}"}
 
 
-@app.post("/api/execute", response_model=ExecuteResult)
+def run_actions_in_background(request_dict: dict):
+    """バックグラウンドでアクションを実行"""
+    global execution_abort_flag
+
+    texts = load_texts()
+    actions = request_dict["actions"]
+    confidence = request_dict.get("confidence", 0.95)
+    min_confidence = request_dict.get("min_confidence", 0.7)
+    wait_timeout = request_dict.get("wait_timeout", DEFAULT_WAIT_TIMEOUT)
+    cursor_speed = request_dict.get("cursor_speed", 0.5)
+    interval = request_dict.get("interval", DEFAULT_CLICK_INTERVAL)
+    start_delay = request_dict.get("start_delay", 0.0)
+
+    # 開始前待機
+    if start_delay > 0:
+        execution_state.add_result({"status": "info", "message": f"[開始待機] {start_delay}秒待機中..."})
+        time.sleep(start_delay)
+        # 待機後に中止されていないか確認
+        if execution_state.abort_flag or execution_abort_flag:
+            execution_state.add_result({"status": "aborted", "message": f"[開始待機] 中止されました"})
+            execution_state.finish()
+            return
+
+    for i, action_dict in enumerate(actions):
+        # 中止チェック
+        if execution_state.abort_flag or execution_abort_flag:
+            execution_state.add_result({"status": "aborted", "message": f"[中止] ユーザーにより中止されました"})
+            break
+
+        action_type = action_dict.get("type")
+        image_name = action_dict.get("image_name")
+        image_names = action_dict.get("image_names")
+        text_id = action_dict.get("text_id")
+        seconds = action_dict.get("seconds")
+        count = action_dict.get("count")
+        flow_name = action_dict.get("flow_name")
+
+        # エラー時に画像名を含めるためのコンテキスト情報
+        action_context = ""
+        if image_name:
+            action_context = image_name
+        elif image_names:
+            action_context = " / ".join(image_names)
+
+        try:
+            if action_type == "click":
+                result = execute_click(image_name, confidence, min_confidence)
+            elif action_type == "click_or":
+                result = execute_click_or(image_names, confidence, min_confidence)
+            elif action_type == "paste":
+                result = execute_paste(text_id, texts)
+            elif action_type == "wait":
+                result = execute_wait(image_name, confidence, wait_timeout, cursor_speed)
+            elif action_type == "wait_disappear":
+                result = execute_wait_disappear(image_name, confidence, wait_timeout, cursor_speed)
+            elif action_type == "wait_seconds":
+                result = execute_wait_seconds(seconds)
+            elif action_type == "pagedown":
+                result = execute_pagedown(count)
+            elif action_type == "save_to_file":
+                result = execute_save_to_file(text_id, flow_name, texts)
+            else:
+                result = {"status": "error", "message": f"不明なアクション: {action_type}"}
+
+            execution_state.add_result(result)
+
+            # 次のアクションまで待機（最後以外、成功時のみ）
+            if i < len(actions) - 1 and result["status"] == "success":
+                time.sleep(interval)
+
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f"エラー詳細: {error_detail}")
+            error_msg = f"エラー: {type(e).__name__}"
+            if action_context:
+                error_msg += f" ({action_context})"
+            tb_lines = error_detail.strip().split('\n')
+            if len(tb_lines) >= 2:
+                error_msg += f" [場所: {tb_lines[-2].strip()}]"
+            execution_state.add_result({"status": "error", "message": error_msg})
+
+    execution_state.finish()
+
+
+@app.post("/api/execute")
 async def execute_actions(request: ExecuteRequest):
-    """アクションを順番に実行する"""
+    """アクションを順番に実行する（バックグラウンド）"""
     global execution_abort_flag
     execution_abort_flag = False  # 実行開始時にリセット
 
     if not request.actions:
         raise HTTPException(status_code=400, detail="アクションが選択されていません")
 
-    texts = load_texts()
-    results = []
-    success_count = 0
+    # 既に実行中かチェック
+    execution_id = execution_state.start(len(request.actions))
+    if execution_id is None:
+        raise HTTPException(status_code=409, detail="既に実行中です。完了を待つか中止してください。")
 
-    for i, action in enumerate(request.actions):
-        # 中止チェック
-        if execution_abort_flag:
-            results.append({"status": "aborted", "message": f"[中止] ユーザーにより中止されました"})
-            break
-        # エラー時に画像名を含めるためのコンテキスト情報
-        action_context = ""
-        if action.image_name:
-            action_context = action.image_name
-        elif action.image_names:
-            action_context = " / ".join(action.image_names)
+    # リクエストを辞書に変換（スレッドに渡すため）
+    request_dict = {
+        "actions": [a.model_dump() for a in request.actions],
+        "confidence": request.confidence,
+        "min_confidence": request.min_confidence,
+        "wait_timeout": request.wait_timeout,
+        "cursor_speed": request.cursor_speed,
+        "interval": request.interval,
+        "start_delay": request.start_delay
+    }
 
-        try:
-            if action.type == "click":
-                # クリック
-                result = execute_click(action.image_name, request.confidence)
-            elif action.type == "click_or":
-                # クリック（OR条件：最初に見つかった画像をクリック）
-                result = execute_click_or(action.image_names, request.confidence)
-            elif action.type == "paste":
-                # テキスト貼り付け（IDベース）
-                result = execute_paste(action.text_id, texts)
-            elif action.type == "wait":
-                # 画像が出るまで待機（表示待機）
-                result = execute_wait(action.image_name, request.confidence, request.wait_timeout, request.cursor_speed)
-            elif action.type == "wait_disappear":
-                # 画像が消えるまで待機（消失待機）
-                result = execute_wait_disappear(action.image_name, request.confidence, request.wait_timeout, request.cursor_speed)
-            elif action.type == "wait_seconds":
-                # 指定秒数待機
-                result = execute_wait_seconds(action.seconds)
-            elif action.type == "pagedown":
-                # PageDownキーを押す
-                result = execute_pagedown(action.count)
-            elif action.type == "save_to_file":
-                # クリップボードの内容をファイルに保存
-                result = execute_save_to_file(action.text_id, action.flow_name, texts)
-            else:
-                result = {"status": "error", "message": f"不明なアクション: {action.type}"}
+    # バックグラウンドスレッドで実行開始
+    thread = threading.Thread(target=run_actions_in_background, args=(request_dict,))
+    thread.start()
 
-            results.append(result)
-            if result["status"] == "success":
-                success_count += 1
-
-            # 次のアクションまで待機（最後以外）
-            if i < len(request.actions) - 1 and result["status"] == "success":
-                time.sleep(request.interval)
-
-        except Exception as e:
-            import traceback
-            error_detail = traceback.format_exc()
-            print(f"エラー詳細: {error_detail}")  # サーバーログに出力
-            # 画像名とスタックトレースをエラーメッセージに含める
-            error_msg = f"エラー: {type(e).__name__}"
-            if action_context:
-                error_msg += f" ({action_context})"
-            # スタックトレースの最後の行（発生箇所）を追加
-            tb_lines = error_detail.strip().split('\n')
-            if len(tb_lines) >= 2:
-                error_msg += f" [場所: {tb_lines[-2].strip()}]"
-            results.append({"status": "error", "message": error_msg})
-
-    return ExecuteResult(
-        success=success_count == len(request.actions),
-        message=f"{success_count}/{len(request.actions)} 件のアクションが成功しました",
-        details=results
-    )
+    # すぐにレスポンスを返す
+    return {"status": "started", "execution_id": execution_id, "message": "実行を開始しました"}
 
 
 def find_best_match_confidence(image_path: str, target_confidence: float) -> tuple[float | None, any]:
@@ -435,8 +536,8 @@ def find_best_match_confidence(image_path: str, target_confidence: float) -> tup
     return None, None
 
 
-def execute_click(image_name: str, confidence: float) -> dict:
-    """画像をクリック"""
+def execute_click(image_name: str, confidence: float, min_confidence: float = 0.7, max_retries: int = 2) -> dict:
+    """画像をクリック（段階的に認識精度を下げて試行、リトライ付き）"""
     if not image_name:
         return {"status": "error", "message": "画像が指定されていません"}
 
@@ -444,23 +545,73 @@ def execute_click(image_name: str, confidence: float) -> dict:
     if not image_path.exists():
         return {"status": "error", "message": f"画像ファイルが見つかりません: {image_name}"}
 
-    found_conf, location = find_best_match_confidence(str(image_path), confidence)
+    for retry in range(max_retries):
+        # 段階的に精度を下げて試す（浮動小数点誤差対策で0.001の余裕）
+        current_conf = confidence
+        while current_conf >= min_confidence - 0.001:
+            try:
+                location = pyautogui.locateCenterOnScreen(str(image_path), confidence=current_conf)
+                if location is not None:
+                    pyautogui.click(location)
+                    retry_note = f", リトライ{retry+1}回目" if retry > 0 else ""
+                    if current_conf < confidence - 0.001:
+                        return {"status": "success", "message": f"[クリック] {image_name} (位置: {location}, 精度{int(round(current_conf*100))}%で検出{retry_note})"}
+                    else:
+                        return {"status": "success", "message": f"[クリック] {image_name} (位置: {location}{retry_note})"}
+            except pyautogui.ImageNotFoundException:
+                pass
+            except Exception:
+                pass
+            current_conf -= 0.05
 
-    if found_conf is not None and found_conf >= confidence:
-        pyautogui.click(location)
-        return {"status": "success", "message": f"[クリック] {image_name} (位置: {location})"}
+        # 見つからなかった場合、次のリトライ前に1秒待機
+        if retry < max_retries - 1:
+            time.sleep(1.0)
+
+    # 最低精度でも見つからなかった場合、どの程度で検出可能か調べる
+    found_conf, _ = find_best_match_confidence(str(image_path), min_confidence)
 
     if found_conf is not None:
-        return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name} (最大{int(found_conf*100)}%で検出、設定は{int(confidence*100)}%)"}
+        return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name} ({max_retries}回試行後も失敗、最大{int(found_conf*100)}%で検出、最低設定は{int(min_confidence*100)}%)"}
 
-    return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name} (30%未満、画像が画面にない可能性)"}
+    return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name} ({max_retries}回試行後も失敗、30%未満)"}
 
 
-def execute_click_or(image_names: list[str], confidence: float) -> dict:
-    """複数画像のうち最初に見つかった画像をクリック"""
+def execute_click_or(image_names: list[str], confidence: float, min_confidence: float = 0.7, max_retries: int = 2) -> dict:
+    """複数画像のうち最初に見つかった画像をクリック（段階的に精度を下げて試行、リトライ付き）"""
     if not image_names or len(image_names) == 0:
         return {"status": "error", "message": "画像が指定されていません"}
 
+    for retry in range(max_retries):
+        # 各精度レベルで全画像を試す
+        current_conf = confidence
+        while current_conf >= min_confidence - 0.001:
+            for image_name in image_names:
+                image_path = IMAGES_DIR / image_name
+                if not image_path.exists():
+                    continue
+
+                try:
+                    location = pyautogui.locateCenterOnScreen(str(image_path), confidence=current_conf)
+                    if location is not None:
+                        pyautogui.click(location)
+                        retry_note = f", リトライ{retry+1}回目" if retry > 0 else ""
+                        if current_conf < confidence - 0.001:
+                            return {"status": "success", "message": f"[クリックOR] {image_name} (位置: {location}, 精度{int(current_conf*100)}%で検出{retry_note})"}
+                        else:
+                            return {"status": "success", "message": f"[クリックOR] {image_name} (位置: {location}{retry_note})"}
+                except pyautogui.ImageNotFoundException:
+                    pass
+                except Exception:
+                    pass
+
+            current_conf -= 0.05
+
+        # 見つからなかった場合、次のリトライ前に1秒待機
+        if retry < max_retries - 1:
+            time.sleep(1.0)
+
+    # どの画像も見つからなかった場合、検出可能な精度を調べる
     not_found_details = []
     for image_name in image_names:
         image_path = IMAGES_DIR / image_name
@@ -468,20 +619,14 @@ def execute_click_or(image_names: list[str], confidence: float) -> dict:
             not_found_details.append(f"{image_name}(ファイルなし)")
             continue
 
-        found_conf, location = find_best_match_confidence(str(image_path), confidence)
-
-        if found_conf is not None and found_conf >= confidence:
-            pyautogui.click(location)
-            return {"status": "success", "message": f"[クリックOR] {image_name} (位置: {location})"}
-
+        found_conf, _ = find_best_match_confidence(str(image_path), min_confidence)
         if found_conf is not None:
             not_found_details.append(f"{image_name}({int(found_conf*100)}%)")
         else:
             not_found_details.append(f"{image_name}(30%未満)")
 
-    # どの画像も見つからなかった
     detail_str = " / ".join(not_found_details)
-    return {"status": "not_found", "message": f"画面上にどの画像も見つかりません: {detail_str} (設定: {int(confidence*100)}%)"}
+    return {"status": "not_found", "message": f"画面上にどの画像も見つかりません: {detail_str} ({max_retries}回試行後も失敗、最低設定: {int(min_confidence*100)}%)"}
 
 
 def execute_paste(text_id: str, texts: dict) -> dict:
@@ -517,8 +662,8 @@ def execute_wait(image_name: str, confidence: float, timeout: float, cursor_spee
     move_amount = 100  # 移動量（ピクセル）- 見やすく
 
     while time.time() - start_time < timeout:
-        # 中止チェック
-        if execution_abort_flag:
+        # 中止チェック（両方のフラグをチェック）
+        if execution_abort_flag or execution_state.abort_flag:
             return {"status": "aborted", "message": f"[待機] 中止されました: {image_name}"}
 
         try:
@@ -570,8 +715,8 @@ def execute_wait_disappear(image_name: str, confidence: float, timeout: float, c
     move_amount = 100
 
     while time.time() - start_time < timeout:
-        # 中止チェック
-        if execution_abort_flag:
+        # 中止チェック（両方のフラグをチェック）
+        if execution_abort_flag or execution_state.abort_flag:
             return {"status": "aborted", "message": f"[消失待機] 中止されました: {image_name}"}
 
         try:

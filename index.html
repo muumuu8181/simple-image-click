@@ -78,7 +78,8 @@
         .action-item .action-type.click { background: #28a745; }
         .action-item .action-type.paste { background: #17a2b8; }
         .action-item .action-type.wait { background: #ffc107; color: #333; }
-        .action-item .action-thumb { width: 40px; height: 30px; object-fit: contain; border-radius: 4px; background: #eee; }
+        .action-item .action-thumb { width: 40px; height: 30px; object-fit: contain; border-radius: 4px; background: #eee; cursor: pointer; transition: transform 0.2s; }
+        .action-item .action-thumb:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         .action-item .action-desc { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
         .action-item .action-desc:hover { color: #667eea; text-decoration: underline; }
         .action-item .action-controls { display: flex; gap: 3px; }
@@ -107,6 +108,13 @@
         .action-item .action-type.save_to_file { background: #e83e8c; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .empty-message { color: #999; font-style: italic; text-align: center; padding: 20px; }
+
+        /* ドラッグ&ドロップ */
+        .action-item { cursor: grab; }
+        .action-item:active { cursor: grabbing; }
+        .action-item.dragging { opacity: 0.5; background: #e9ecef; }
+        .action-item.drag-over { border-top: 3px solid #667eea; margin-top: -3px; }
+        .action-item .drag-handle { color: #999; margin-right: 5px; cursor: grab; }
 
         /* ボタン */
         .button-group { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
@@ -188,7 +196,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.38</div>
+    <div class="version">v0.43</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -206,6 +214,11 @@
                     <input type="number" id="confidence" value="0.95" min="0.1" max="1.0" step="0.05">
                 </div>
                 <div class="setting-item">
+                    <label>最低精度</label>
+                    <input type="number" id="minConfidence" value="0.7" min="0.1" max="1.0" step="0.05">
+                    <span title="この値まで段階的に下げて試す">?</span>
+                </div>
+                <div class="setting-item">
                     <label>待機タイムアウト</label>
                     <input type="number" id="waitTimeout" value="1800" min="1" max="7200" step="1">
                     <span>秒</span>
@@ -214,6 +227,11 @@
                     <label>カーソル速度</label>
                     <input type="number" id="cursorSpeed" value="0.5" min="0.1" max="3.0" step="0.1">
                     <span>秒</span>
+                </div>
+                <div class="setting-item">
+                    <label>開始前待機</label>
+                    <input type="number" id="startDelay" value="0" min="0" max="30" step="1">
+                    <span title="実行開始前の待機時間（ウィンドウ切替用）">秒</span>
                 </div>
                 <div class="setting-buttons">
                     <button class="btn btn-secondary" onclick="saveDefaultSettings()">デフォ保存</button>
@@ -396,7 +414,8 @@
             interval: 2,
             confidence: 0.95,
             waitTimeout: 1800,
-            cursorSpeed: 0.5
+            cursorSpeed: 0.5,
+            startDelay: 0
         };
 
         // 初期化
@@ -419,6 +438,7 @@
                     document.getElementById('confidence').value = settings.confidence ?? DEFAULT_SETTINGS.confidence;
                     document.getElementById('waitTimeout').value = settings.waitTimeout ?? DEFAULT_SETTINGS.waitTimeout;
                     document.getElementById('cursorSpeed').value = settings.cursorSpeed ?? DEFAULT_SETTINGS.cursorSpeed;
+                    document.getElementById('startDelay').value = settings.startDelay ?? DEFAULT_SETTINGS.startDelay;
                 } catch (e) {
                     console.error('設定の読み込みに失敗:', e);
                 }
@@ -430,7 +450,8 @@
                 interval: parseFloat(document.getElementById('interval').value),
                 confidence: parseFloat(document.getElementById('confidence').value),
                 waitTimeout: parseFloat(document.getElementById('waitTimeout').value),
-                cursorSpeed: parseFloat(document.getElementById('cursorSpeed').value)
+                cursorSpeed: parseFloat(document.getElementById('cursorSpeed').value),
+                startDelay: parseFloat(document.getElementById('startDelay').value)
             };
             localStorage.setItem('simpleImageClickSettings', JSON.stringify(settings));
             alert('設定をデフォルトとして保存しました');
@@ -442,6 +463,7 @@
             document.getElementById('confidence').value = DEFAULT_SETTINGS.confidence;
             document.getElementById('waitTimeout').value = DEFAULT_SETTINGS.waitTimeout;
             document.getElementById('cursorSpeed').value = DEFAULT_SETTINGS.cursorSpeed;
+            document.getElementById('startDelay').value = DEFAULT_SETTINGS.startDelay;
             alert('設定を初期値にリセットしました');
         }
 
@@ -539,6 +561,20 @@
             const details = document.getElementById('resultDetails').innerText;
             const text = msg + '\n' + details;
             navigator.clipboard.writeText(text);
+            showCopyFeedback(event.target);
+        }
+
+        // コピーボタンのフィードバック表示
+        function showCopyFeedback(btn) {
+            const originalText = btn.textContent;
+            btn.textContent = '✓ コピー済み';
+            btn.style.background = '#28a745';
+            btn.style.color = 'white';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+                btn.style.color = '';
+            }, 1500);
         }
 
         // 追加モード設定
@@ -646,19 +682,19 @@
                     typeLabel = 'クリック';
                     desc = a.image_name;
                     const img = images.find(x => x.name === a.image_name);
-                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
+                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="" title="クリックで拡大" onclick="event.stopPropagation(); showImagePreview('${a.image_name}')">`;
                 } else if (a.type === 'click_or') {
                     typeLabel = 'クリックOR';
                     desc = (a.image_names || []).join(' / ');
                     thumbHtml = (a.image_names || []).map(name => {
                         const img = images.find(x => x.name === name);
-                        return img ? `<img class="action-thumb" src="${img.path}" alt="" title="${name}">` : '';
+                        return img ? `<img class="action-thumb" src="${img.path}" alt="" title="${name} (クリックで拡大)" onclick="event.stopPropagation(); showImagePreview('${name}')">` : '';
                     }).join('');
                 } else if (a.type === 'wait') {
                     typeLabel = '表示待機';
                     desc = a.image_name;
                     const img = images.find(x => x.name === a.image_name);
-                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
+                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="" title="クリックで拡大" onclick="event.stopPropagation(); showImagePreview('${a.image_name}')">`;
                 } else if (a.type === 'paste') {
                     typeLabel = '貼付';
                     const textObj = texts[a.text_id];
@@ -667,7 +703,7 @@
                     typeLabel = '消失待機';
                     desc = a.image_name;
                     const img = images.find(x => x.name === a.image_name);
-                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="">`;
+                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="" title="クリックで拡大" onclick="event.stopPropagation(); showImagePreview('${a.image_name}')">`;
                 } else if (a.type === 'wait_seconds') {
                     typeLabel = '秒待機';
                     desc = `${a.seconds}秒`;
@@ -686,23 +722,22 @@
                 const isSwappingThis = swappingImageIndex === i;
                 const isAddingToThis = addingImageToActionIndex === i;
                 return `
-                    <div class="action-item ${a.type} ${isSwappingThis ? 'swapping' : ''} ${isAddingToThis ? 'adding' : ''}">
+                    <div class="action-item ${a.type} ${isSwappingThis ? 'swapping' : ''} ${isAddingToThis ? 'adding' : ''}" draggable="true" data-index="${i}" ondragstart="handleDragStart(event, ${i})" ondragover="handleDragOver(event, ${i})" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, ${i})" ondragend="handleDragEnd(event)">
+                        <span class="drag-handle">☰</span>
                         <span class="action-num">${i + 1}.</span>
                         <span class="action-type ${a.type}">${typeLabel}</span>
                         ${thumbHtml}
                         <span class="action-desc" title="${escapeHtml(desc)}${canSwapText ? ' (クリックで差し替え)' : ''}" onclick="${canSwapText ? `startSwapText(${i})` : ''}">${escapeHtml(desc)}</span>
                         <div class="action-controls">
                             ${canAddImage ? (isAddingToThis
-                                ? `<button class="add-img-btn adding" onclick="cancelAddImageToAction()" title="キャンセル">✕</button>`
-                                : `<button class="add-img-btn" onclick="startAddImageToAction(${i})" title="OR画像を追加">+</button>`)
+                                ? `<button class="add-img-btn adding" onclick="event.stopPropagation(); cancelAddImageToAction()" title="キャンセル">✕</button>`
+                                : `<button class="add-img-btn" onclick="event.stopPropagation(); startAddImageToAction(${i})" title="OR画像を追加">+</button>`)
                             : ''}
                             ${canSwapImage ? (isSwappingThis
-                                ? `<button class="swap-btn swapping" onclick="cancelSwapImage()" title="キャンセル">✕</button>`
-                                : `<button class="swap-btn" onclick="startSwapImage(${i})" title="画像差し替え">🔄</button>`)
+                                ? `<button class="swap-btn swapping" onclick="event.stopPropagation(); cancelSwapImage()" title="キャンセル">✕</button>`
+                                : `<button class="swap-btn" onclick="event.stopPropagation(); startSwapImage(${i})" title="画像差し替え">🔄</button>`)
                             : ''}
-                            <button class="up-btn" onclick="moveAction(${i}, -1)" ${i === 0 ? 'disabled style="opacity:0.3"' : ''} title="上へ">▲</button>
-                            <button class="down-btn" onclick="moveAction(${i}, 1)" ${i === actions.length - 1 ? 'disabled style="opacity:0.3"' : ''} title="下へ">▼</button>
-                            <button class="remove-btn" onclick="removeAction(${i})" title="削除">✕</button>
+                            <button class="remove-btn" onclick="event.stopPropagation(); removeAction(${i})" title="削除">✕</button>
                         </div>
                     </div>
                 `;
@@ -717,6 +752,49 @@
             actions[index] = actions[newIndex];
             actions[newIndex] = temp;
             renderActions();
+        }
+
+        // ドラッグ&ドロップ
+        let draggedIndex = null;
+
+        function handleDragStart(event, index) {
+            draggedIndex = index;
+            event.target.classList.add('dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', index);
+        }
+
+        function handleDragOver(event, index) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            if (draggedIndex !== null && draggedIndex !== index) {
+                event.target.closest('.action-item')?.classList.add('drag-over');
+            }
+        }
+
+        function handleDragLeave(event) {
+            event.target.closest('.action-item')?.classList.remove('drag-over');
+        }
+
+        function handleDrop(event, targetIndex) {
+            event.preventDefault();
+            event.target.closest('.action-item')?.classList.remove('drag-over');
+
+            if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+            // 配列からドラッグ元を取り出してターゲット位置に挿入
+            const [draggedItem] = actions.splice(draggedIndex, 1);
+            actions.splice(targetIndex, 0, draggedItem);
+
+            draggedIndex = null;
+            renderActions();
+        }
+
+        function handleDragEnd(event) {
+            event.target.classList.remove('dragging');
+            // すべてのdrag-overクラスを削除
+            document.querySelectorAll('.action-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+            draggedIndex = null;
         }
 
         // アクション削除
@@ -832,6 +910,7 @@
 
             const fullText = actionText + resultText;
             navigator.clipboard.writeText(fullText);
+            showCopyFeedback(event.target);
         }
 
         // テンプレート実行モーダル
@@ -905,51 +984,126 @@
 
             // 実行
             const interval = parseFloat(document.getElementById('interval').value) || 2;
-            const confidence = parseFloat(document.getElementById('confidence').value) || 0.8;
-            const waitTimeout = parseFloat(document.getElementById('waitTimeout').value) || 30;
+            const confidence = parseFloat(document.getElementById('confidence').value) || 0.95;
+            const minConfidence = parseFloat(document.getElementById('minConfidence').value) || 0.7;
+            const waitTimeout = parseFloat(document.getElementById('waitTimeout').value) || 1800;
             const cursorSpeed = parseFloat(document.getElementById('cursorSpeed').value) || 0.5;
+            const startDelay = parseFloat(document.getElementById('startDelay').value) || 0;
 
             document.getElementById('loading').classList.add('show');
             document.getElementById('result').className = 'result';
+            document.getElementById('progressList').innerHTML = '';
 
             try {
                 const res = await fetch('/api/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ actions: templateActions, interval, confidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed })
+                    body: JSON.stringify({ actions: templateActions, interval, confidence, min_confidence: minConfidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed, start_delay: startDelay })
                 });
-                const result = await res.json();
-                showResult(result);
+                const startResult = await res.json();
+
+                if (startResult.status === 'started') {
+                    startProgressPolling();
+                } else if (res.status === 409) {
+                    document.getElementById('loading').classList.remove('show');
+                    alert(startResult.detail || '既に実行中です');
+                } else {
+                    document.getElementById('loading').classList.remove('show');
+                    showResult(startResult);
+                }
             } catch (e) {
-                showResult({ success: false, message: 'エラー: ' + e.message, details: [] });
-            } finally {
                 document.getElementById('loading').classList.remove('show');
+                showResult({ success: false, message: 'エラー: ' + e.message, details: [] });
             }
         }
+
+        // 実行状態ポーリング用
+        let pollingInterval = null;
 
         // 実行
         async function executeActions() {
             const interval = parseFloat(document.getElementById('interval').value) || 2;
-            const confidence = parseFloat(document.getElementById('confidence').value) || 0.8;
-            const waitTimeout = parseFloat(document.getElementById('waitTimeout').value) || 30;
+            const confidence = parseFloat(document.getElementById('confidence').value) || 0.95;
+            const minConfidence = parseFloat(document.getElementById('minConfidence').value) || 0.7;
+            const waitTimeout = parseFloat(document.getElementById('waitTimeout').value) || 1800;
+            const cursorSpeed = parseFloat(document.getElementById('cursorSpeed').value) || 0.5;
+            const startDelay = parseFloat(document.getElementById('startDelay').value) || 0;
 
             document.getElementById('loading').classList.add('show');
             document.getElementById('result').className = 'result';
+            document.getElementById('progressList').innerHTML = '';
 
             try {
-                const cursorSpeed = parseFloat(document.getElementById('cursorSpeed').value) || 0.5;
                 const res = await fetch('/api/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ actions, interval, confidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed })
+                    body: JSON.stringify({ actions, interval, confidence, min_confidence: minConfidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed, start_delay: startDelay })
                 });
-                const result = await res.json();
-                showResult(result);
+                const startResult = await res.json();
+
+                if (startResult.status === 'started') {
+                    // ポーリング開始
+                    startProgressPolling();
+                } else if (res.status === 409) {
+                    // 既に実行中
+                    document.getElementById('loading').classList.remove('show');
+                    alert(startResult.detail || '既に実行中です');
+                } else {
+                    document.getElementById('loading').classList.remove('show');
+                    showResult(startResult);
+                }
             } catch (e) {
-                showResult({ success: false, message: 'エラー: ' + e.message, details: [] });
-            } finally {
                 document.getElementById('loading').classList.remove('show');
+                showResult({ success: false, message: 'エラー: ' + e.message, details: [] });
             }
+        }
+
+        // 進捗ポーリング開始
+        function startProgressPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(pollExecutionStatus, 500);
+        }
+
+        // 進捗状態を取得
+        async function pollExecutionStatus() {
+            try {
+                const res = await fetch('/api/execute/status');
+                const status = await res.json();
+                updateProgressDisplay(status);
+
+                if (status.completed || (status.aborted && !status.is_running)) {
+                    clearInterval(pollingInterval);
+                    pollingInterval = null;
+                    document.getElementById('loading').classList.remove('show');
+
+                    const successCount = status.results.filter(r => r.status === 'success').length;
+                    showResult({
+                        success: successCount === status.total_steps,
+                        message: `${successCount}/${status.total_steps} 件のアクションが成功しました`,
+                        details: status.results
+                    });
+                }
+            } catch (e) {
+                console.error('ポーリングエラー:', e);
+            }
+        }
+
+        // 進捗表示を更新
+        function updateProgressDisplay(status) {
+            const progressList = document.getElementById('progressList');
+            let html = `<div style="margin-bottom:8px;font-weight:bold;font-size:16px;">進捗: ${status.current_step}/${status.total_steps}</div>`;
+
+            status.results.forEach((r, i) => {
+                const icon = r.status === 'success' ? '✅' : r.status === 'aborted' ? '🛑' : '❌';
+                const color = r.status === 'success' ? '#28a745' : '#dc3545';
+                html += `<div style="color:${color};margin:3px 0;">${i+1}. ${icon} ${escapeHtml(r.message).substring(0, 80)}</div>`;
+            });
+
+            if (status.is_running && status.current_step < status.total_steps) {
+                html += `<div style="color:#007bff;margin:3px 0;font-weight:bold;">${status.current_step + 1}. ⏳ 実行中...</div>`;
+            }
+
+            progressList.innerHTML = html;
         }
 
         // 中止リクエスト
@@ -1340,7 +1494,8 @@
                 const confidence = parseFloat(document.getElementById('confidence').value) || 0.8;
                 const waitTimeout = parseFloat(document.getElementById('waitTimeout').value) || 30;
                 const cursorSpeed = parseFloat(document.getElementById('cursorSpeed').value) || 0.5;
-                logs.push(`設定: interval=${interval}, confidence=${confidence}, waitTimeout=${waitTimeout}, cursorSpeed=${cursorSpeed}`);
+                const startDelay = parseFloat(document.getElementById('startDelay').value) || 0;
+                logs.push(`設定: interval=${interval}, confidence=${confidence}, waitTimeout=${waitTimeout}, cursorSpeed=${cursorSpeed}, startDelay=${startDelay}`);
 
             // ローディング表示
             document.getElementById('loading').classList.add('show');
@@ -1386,7 +1541,8 @@
                             interval,
                             confidence,
                             wait_timeout: waitTimeout,
-                            cursor_speed: cursorSpeed
+                            cursor_speed: cursorSpeed,
+                            start_delay: startDelay
                         })
                     });
                     const result = await res.json();
