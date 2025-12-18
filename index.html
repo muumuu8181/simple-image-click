@@ -218,7 +218,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.60</div>
+    <div class="version">v0.61</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -755,7 +755,7 @@
             // 現在のフローで使われているテキストIDを探す（貼付アクションから）
             const pasteAction = actions.find(a => a.type === 'paste');
             const textId = pasteAction ? pasteAction.text_id : null;
-            insertAction({ type: 'save_to_file', text_id: textId, flow_name: currentFlowName, group_name: currentFlowGroup \!== 'all' ? currentFlowGroup : (flows[currentFlowName]?.group || '') });
+            insertAction({ type: 'save_to_file', text_id: textId, flow_name: currentFlowName, group_name: currentFlowGroup !== 'all' ? currentFlowGroup : (flows[currentFlowName]?.group || '') });
             renderActions();
         }
 
