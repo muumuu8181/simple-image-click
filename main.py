@@ -98,7 +98,8 @@ class ActionItem(BaseModel):
     text_index: int | None = None  # 後方互換用（非推奨）
     seconds: float | None = None  # wait_seconds で使用
     count: int | None = None  # pagedown で使用（回数）
-    flow_name: str | None = None  # save_to_file で使用（フロー名）
+    flow_name: str | None = None  # save_to_file で使用（フロー名）- ファイル内ヘッダー用
+    group_name: str | None = None  # save_to_file で使用（グループ名）- ファイル名用
 
 
 class ExecuteRequest(BaseModel):
@@ -275,6 +276,7 @@ async def save_flow(data: dict):
     """フローを保存"""
     name = data.get("name", "").strip()
     actions = data.get("actions", [])
+    group = data.get("group", "")
 
     if not name:
         raise HTTPException(status_code=400, detail="フロー名が空です")
@@ -284,6 +286,7 @@ async def save_flow(data: dict):
     flows = load_flows()
     flows[name] = {
         "actions": actions,
+        "group": group,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
     }
     save_flows(flows)
@@ -424,6 +427,9 @@ def run_actions_in_background(request_dict: dict):
         seconds = action_dict.get("seconds")
         count = action_dict.get("count")
         flow_name = action_dict.get("flow_name")
+        group_name = action_dict.get("group_name")
+        loop_count = action_dict.get("loop_count", 30)
+        loop_interval = action_dict.get("loop_interval", 10)
 
         # エラー時に画像名を含めるためのコンテキスト情報
         action_context = ""
@@ -448,7 +454,9 @@ def run_actions_in_background(request_dict: dict):
             elif action_type == "pagedown":
                 result = execute_pagedown(count)
             elif action_type == "save_to_file":
-                result = execute_save_to_file(text_id, flow_name, texts)
+                result = execute_save_to_file(text_id, flow_name, group_name, texts)
+            elif action_type == "loop_click":
+                result = execute_loop_click(image_name, confidence, min_confidence, loop_count, loop_interval, execution_state)
             else:
                 result = {"status": "error", "message": f"不明なアクション: {action_type}"}
 
@@ -780,18 +788,30 @@ def sanitize_filename(text: str, max_length: int = 30) -> str:
     return sanitized or "untitled"
 
 
-def execute_save_to_file(text_id: str, flow_name: str, texts: dict) -> dict:
+def execute_save_to_file(text_id: str, flow_name: str, group_name: str, texts: dict) -> dict:
     """クリップボードの内容をファイルに追記保存"""
     from datetime import datetime
     import re
 
+    # グループ名の日本語ラベル
+    GROUP_LABELS = {
+        'ai-normal': 'AI-通常',
+        'ai-dr': 'AI-DR',
+        'blog': 'ブログ投稿',
+        'image-gen': '画像生成'
+    }
+
     # テキストIDからファイル名を決定
     if text_id and text_id in texts:
         text_content = texts[text_id]["text"]
-        filename_base = sanitize_filename(text_content, 30)
+        text_part = sanitize_filename(text_content, 30)
     else:
         text_content = None
-        filename_base = f"text_{text_id or 'unknown'}"
+        text_part = f"text_{text_id or 'unknown'}"
+
+    # グループ名をファイル名に使う（グループがない場合は「未分類」）
+    group_label = GROUP_LABELS.get(group_name, '未分類') if group_name else '未分類'
+    filename_base = f"{group_label}_{text_part}"
 
     # 日付フォルダを作成
     today = datetime.now().strftime("%Y-%m-%d")
@@ -827,6 +847,57 @@ def execute_save_to_file(text_id: str, flow_name: str, texts: dict) -> dict:
         return {"status": "success", "message": f"[ファイル保存] {filepath.name} に追記しました"}
     except Exception as e:
         return {"status": "error", "message": f"ファイル保存エラー: {e}"}
+
+
+def execute_loop_click(image_name: str, confidence: float, min_confidence: float, loop_count: int, loop_interval: int, execution_state) -> dict:
+    """画像を指定回数、指定間隔でループクリック"""
+    global execution_abort_flag
+
+    if not image_name:
+        return {"status": "error", "message": "画像が指定されていません"}
+
+    image_path = IMAGES_DIR / image_name
+    if not image_path.exists():
+        return {"status": "error", "message": f"画像ファイルが見つかりません: {image_name}"}
+
+    success_count = 0
+    fail_count = 0
+
+    for i in range(loop_count):
+        # 中止チェック
+        if execution_state.abort_flag or execution_abort_flag:
+            return {"status": "aborted", "message": f"[ループクリック] {i}/{loop_count}回で中止 (成功: {success_count}, 失敗: {fail_count})"}
+
+        # クリック試行
+        clicked = False
+        current_conf = confidence
+        while current_conf >= min_confidence - 0.001:
+            try:
+                location = pyautogui.locateCenterOnScreen(str(image_path), confidence=current_conf)
+                if location is not None:
+                    pyautogui.click(location)
+                    clicked = True
+                    success_count += 1
+                    break
+            except:
+                pass
+            current_conf -= 0.05
+
+        if not clicked:
+            fail_count += 1
+
+        # 進捗を報告（10回ごと、または最初と最後）
+        if i == 0 or (i + 1) % 10 == 0 or i == loop_count - 1:
+            execution_state.add_result({
+                "status": "info",
+                "message": f"[ループクリック] {i + 1}/{loop_count}回完了 (成功: {success_count}, 失敗: {fail_count})"
+            })
+
+        # 最後のループ以外は間隔待機
+        if i < loop_count - 1:
+            time.sleep(loop_interval)
+
+    return {"status": "success", "message": f"[ループクリック] {loop_count}回完了 (成功: {success_count}, 失敗: {fail_count})"}
 
 
 # 後方互換性のため古いAPIも残す

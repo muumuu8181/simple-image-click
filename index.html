@@ -92,6 +92,7 @@
         .action-item .action-controls .swap-btn:hover { background: #cce5ff; }
         .action-item .action-controls .swap-btn.swapping { background: #ffc107; color: #333; }
         .action-item.swapping { background: #fff3cd; border-left-color: #ffc107; animation: pulse 1s infinite; }
+        .action-item.selected { background: #e3f2fd; border-left-color: #2196f3; box-shadow: 0 0 0 2px #2196f3; }
         .action-item .action-controls .add-img-btn { background: #d4edda; color: #28a745; font-weight: bold; }
         .action-item .action-controls .add-img-btn:hover { background: #c3e6cb; }
         .action-item .action-controls .add-img-btn.adding { background: #28a745; color: white; }
@@ -198,6 +199,14 @@
         .flow-item .flow-checkbox { width: 18px; height: 18px; cursor: pointer; }
         .flow-item.selected { background: #e8daff; border-left-color: #6f42c1; }
         .flow-order-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; background: #6f42c1; color: white; border-radius: 50%; font-size: 12px; font-weight: bold; flex-shrink: 0; }
+        .flow-tab { padding: 6px 12px; border: 1px solid #ddd; background: #f8f9fa; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+        .flow-tab:hover { background: #e9ecef; }
+        .flow-tab.active { background: #6f42c1; color: white; border-color: #6f42c1; }
+        .flow-group-badge { font-size: 9px; padding: 2px 6px; border-radius: 10px; margin-left: 6px; }
+        .flow-group-badge.ai-normal { background: #e3f2fd; color: #1976d2; }
+        .flow-group-badge.ai-dr { background: #fce4ec; color: #c2185b; }
+        .flow-group-badge.blog { background: #e8f5e9; color: #388e3c; }
+        .flow-group-badge.image-gen { background: #fff3e0; color: #f57c00; }
         .btn-purple { background: #6f42c1; color: white; }
         .btn-purple:hover { background: #5a32a3; }
 
@@ -209,7 +218,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.50</div>
+    <div class="version">v0.60</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -270,10 +279,13 @@
             <!-- 右: テキスト一覧（広め） -->
             <div class="panel">
                 <h2>3. テキスト一覧</h2>
-                <div id="searchTags" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;min-height:24px;"></div>
+                <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;min-height:24px;align-items:center;">
+                    <div id="searchTags" style="display:flex;gap:6px;flex-wrap:wrap;flex:1;"></div>
+                    <button onclick="clearSearchTags()" style="padding:2px 6px;font-size:10px;background:#dc3545;color:white;border:none;border-radius:4px;cursor:pointer;" title="タグをクリア">×タグ</button>
+                </div>
                 <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
                     <button class="btn btn-info" onclick="showAddTextModal()">+ テキスト追加</button>
-                    <input type="text" id="textSearch" placeholder="検索（スペース区切りでAND・リアルタイム）" style="flex:1;min-width:150px;padding:8px;border:2px solid #ddd;border-radius:6px;" oninput="searchTexts()">
+                    <input type="text" id="textSearch" placeholder="検索（Enter押すとタグ追加）" style="flex:1;min-width:150px;padding:8px;border:2px solid #ddd;border-radius:6px;" oninput="searchTexts(true)" onkeydown="if(event.key==='Enter')searchTextsWithCount()">
                     <button class="btn btn-secondary" onclick="clearTextSearch()" style="padding:8px 12px;">クリア</button>
                 </div>
                 <div id="textGrid" class="item-grid" style="grid-template-columns: 1fr;"></div>
@@ -283,7 +295,16 @@
         <!-- フロー一覧 -->
         <div class="panel">
             <h2>4. 保存済みフロー</h2>
+            <div class="flow-tabs" style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">
+                <button class="flow-tab active" data-group="all" onclick="setFlowGroup('all')">全て</button>
+                <button class="flow-tab" data-group="ai-normal" onclick="setFlowGroup('ai-normal')">AI-通常</button>
+                <button class="flow-tab" data-group="ai-dr" onclick="setFlowGroup('ai-dr')">AI-DR</button>
+                <button class="flow-tab" data-group="blog" onclick="setFlowGroup('blog')">ブログ投稿</button>
+                <button class="flow-tab" data-group="image-gen" onclick="setFlowGroup('image-gen')">画像生成</button>
+            </div>
             <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+                <button onclick="checkAllInTab()" style="padding:4px 10px;font-size:11px;background:#6f42c1;color:white;border:none;border-radius:4px;cursor:pointer;">☑ まとめてチェック</button>
+                <button onclick="uncheckAllInTab()" style="padding:4px 10px;font-size:11px;background:#6c757d;color:white;border:none;border-radius:4px;cursor:pointer;">☐ 全解除</button>
                 <span id="selectedFlowCount" style="font-size:12px;color:#666;">0件選択中</span>
                 <span id="batchHint" style="font-size:11px;color:#6f42c1;display:none;">→ テキスト一覧から選択して実行</span>
             </div>
@@ -301,6 +322,11 @@
                     <button class="btn btn-success" id="modeClick" onclick="setAddMode('click')" style="padding:5px 10px;font-size:11px;">クリック</button>
                     <button class="btn btn-warning" id="modeWait" onclick="setAddMode('wait')" style="padding:5px 10px;font-size:11px;">表示待機</button>
                     <button class="btn btn-info" id="modeWaitDisappear" onclick="setAddMode('wait_disappear')" style="padding:5px 10px;font-size:11px;">消失待機</button>
+                    <button class="btn" id="modeLoopClick" onclick="setAddMode('loop_click')" style="padding:5px 10px;font-size:11px;background:#fd7e14;color:white;">🔁ループ</button>
+                    <input type="number" id="loopCountInput" value="30" min="1" max="1000" step="1" style="width:45px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;" title="ループ回数">
+                    <span style="font-size:10px;color:#666;">回</span>
+                    <input type="number" id="loopIntervalInput" value="10" min="1" max="300" step="1" style="width:40px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;" title="間隔（秒）">
+                    <span style="font-size:10px;color:#666;">秒</span>
                     <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
                     <input type="number" id="waitSecondsInput" value="10" min="1" max="300" step="1" style="width:50px;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
                     <button class="btn btn-secondary" onclick="addWaitSecondsAction()" style="padding:5px 10px;font-size:11px;">秒待機</button>
@@ -367,6 +393,16 @@
         <div class="modal-content">
             <h3>フローを保存</h3>
             <input type="text" id="flowNameInput" placeholder="フロー名を入力（例: 週次報告書作成）" onkeydown="if(event.key === 'Enter') saveFlow()">
+            <div style="margin-top:10px;">
+                <label style="font-size:12px;color:#666;">グループ:</label>
+                <select id="flowGroupSelect" style="margin-left:8px;padding:6px;border-radius:4px;border:1px solid #ddd;">
+                    <option value="">未分類</option>
+                    <option value="ai-normal">AI-通常</option>
+                    <option value="ai-dr">AI-DR</option>
+                    <option value="blog">ブログ投稿</option>
+                    <option value="image-gen">画像生成</option>
+                </select>
+            </div>
             <div class="modal-buttons">
                 <button class="btn btn-secondary" onclick="hideFlowModal()">キャンセル</button>
                 <button class="btn btn-purple" onclick="saveFlow()">保存 (Enter)</button>
@@ -422,6 +458,7 @@
         let addMode = 'click'; // 'click' or 'wait'
         let editingTextId = null;
         let currentFlowName = null;  // 読み込んだフロー名を記憶
+        let selectedActionIndex = null;  // 選択中のアクションインデックス（nullなら末尾に追加）
 
         // デフォルト設定値
         const DEFAULT_SETTINGS = {
@@ -505,7 +542,7 @@
                 grid.innerHTML = '<p class="empty-message">画像をアップロードしてください</p>';
                 return;
             }
-            grid.innerHTML = images.map(img => {
+            grid.innerHTML = images.slice().reverse().map(img => {
                 const isReplacing = replacingImageName === img.name;
                 return `
                 <div class="item-card ${isReplacing ? 'replacing' : ''}" onclick="addImageAction('${img.name}')">
@@ -563,6 +600,13 @@
             localStorage.setItem(SEARCH_TAG_STORAGE_KEY, JSON.stringify(searchTagCounts));
         }
 
+        function clearSearchTags() {
+            if (!confirm('検索タグを全てクリアしますか？')) return;
+            searchTagCounts = {};
+            saveSearchTags();
+            renderSearchTags();
+        }
+
         function incrementSearchTag(keyword) {
             if (!keyword || keyword.length < 2) return;  // 2文字未満は無視
             const key = keyword.toLowerCase();
@@ -592,11 +636,12 @@
 
         function applySearchTag(word) {
             document.getElementById('textSearch').value = word;
-            searchTexts(true);  // タグ経由はカウントしない
+            incrementSearchTag(word);  // タグクリック時もカウント増加
+            searchTexts(true);  // 検索実行（二重カウント防止のためskip）
         }
 
-        // テキスト検索（AND検索）
-        function searchTexts(fromTag = false) {
+        // テキスト検索（AND検索）- skipCount=trueでカウントしない
+        function searchTexts(skipCount = false) {
             const query = document.getElementById('textSearch').value.trim();
             if (!query) {
                 filteredTextIds = null;
@@ -605,9 +650,8 @@
             }
             const keywords = query.toLowerCase().split(/\s+/).filter(k => k);
 
-            // タグ経由でなければカウント（Enterキー押下時や、入力完了後）
-            if (!fromTag && keywords.length > 0) {
-                // 最初のキーワードだけカウント（AND検索の主キーワード）
+            // Enterキー押下時のみカウント
+            if (!skipCount && keywords.length > 0) {
                 incrementSearchTag(keywords[0]);
             }
 
@@ -616,6 +660,11 @@
                 return keywords.every(kw => text.includes(kw));
             });
             renderTexts();
+        }
+
+        // Enterキー押下時にカウント付きで検索
+        function searchTextsWithCount() {
+            searchTexts(false);  // カウントする
         }
 
         function clearTextSearch() {
@@ -657,6 +706,7 @@
             document.getElementById('modeClick').style.opacity = mode === 'click' ? 1 : 0.5;
             document.getElementById('modeWait').style.opacity = mode === 'wait' ? 1 : 0.5;
             document.getElementById('modeWaitDisappear').style.opacity = mode === 'wait_disappear' ? 1 : 0.5;
+            document.getElementById('modeLoopClick').style.opacity = mode === 'loop_click' ? 1 : 0.5;
         }
 
         // 画像アクション追加
@@ -667,7 +717,14 @@
                 addImageToAction(imageName);
                 return;
             }
-            actions.push({ type: addMode, image_name: imageName });
+            if (addMode === 'loop_click') {
+                const loopCount = parseInt(document.getElementById('loopCountInput').value) || 30;
+                const loopInterval = parseInt(document.getElementById('loopIntervalInput').value) || 10;
+                insertAction({ type: 'loop_click', image_name: imageName, loop_count: loopCount, loop_interval: loopInterval });
+                setAddMode('click');  // ループ追加後は自動でクリックモードに戻る
+            } else {
+                insertAction({ type: addMode, image_name: imageName });
+            }
             renderActions();
         }
 
@@ -678,7 +735,7 @@
                 alert('秒数は0より大きい値を入力してください');
                 return;
             }
-            actions.push({ type: 'wait_seconds', seconds: seconds });
+            insertAction({ type: 'wait_seconds', seconds: seconds });
             renderActions();
         }
 
@@ -689,7 +746,7 @@
                 alert('回数は1以上を入力してください');
                 return;
             }
-            actions.push({ type: 'pagedown', count: count });
+            insertAction({ type: 'pagedown', count: count });
             renderActions();
         }
 
@@ -698,7 +755,7 @@
             // 現在のフローで使われているテキストIDを探す（貼付アクションから）
             const pasteAction = actions.find(a => a.type === 'paste');
             const textId = pasteAction ? pasteAction.text_id : null;
-            actions.push({ type: 'save_to_file', text_id: textId, flow_name: currentFlowName });
+            insertAction({ type: 'save_to_file', text_id: textId, flow_name: currentFlowName, group_name: currentFlowGroup \!== 'all' ? currentFlowGroup : (flows[currentFlowName]?.group || '') });
             renderActions();
         }
 
@@ -728,7 +785,7 @@
                 return;
             }
 
-            actions.push({ type: 'paste', text_id: textId });
+            insertAction({ type: 'paste', text_id: textId });
             renderActions();
         }
 
@@ -789,14 +846,20 @@
                     const textObj = a.text_id ? texts[a.text_id] : null;
                     const textPreview = textObj ? textObj.text.substring(0, 20) + '...' : '(テキスト未指定)';
                     desc = `${a.flow_name || '(フロー名なし)'} → ${textPreview}`;
+                } else if (a.type === 'loop_click') {
+                    typeLabel = '🔁ループ';
+                    desc = `${a.image_name} (${a.loop_count}回, ${a.loop_interval}秒間隔)`;
+                    const img = images.find(x => x.name === a.image_name);
+                    if (img) thumbHtml = `<img class="action-thumb" src="${img.path}" alt="" title="クリックで拡大" onclick="event.stopPropagation(); showImagePreview('${a.image_name}')">`;
                 }
                 const canSwapText = a.type === 'paste';
-                const canSwapImage = a.type === 'click' || a.type === 'wait' || a.type === 'wait_disappear';
+                const canSwapImage = a.type === 'click' || a.type === 'wait' || a.type === 'wait_disappear' || a.type === 'loop_click';
                 const canAddImage = a.type === 'click' || a.type === 'click_or';
                 const isSwappingThis = swappingImageIndex === i;
                 const isAddingToThis = addingImageToActionIndex === i;
+                const isSelected = selectedActionIndex === i;
                 return `
-                    <div class="action-item ${a.type} ${isSwappingThis ? 'swapping' : ''} ${isAddingToThis ? 'adding' : ''}" draggable="true" data-index="${i}" ondragstart="handleDragStart(event, ${i})" ondragover="handleDragOver(event, ${i})" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, ${i})" ondragend="handleDragEnd(event)">
+                    <div class="action-item ${a.type} ${isSwappingThis ? 'swapping' : ''} ${isAddingToThis ? 'adding' : ''} ${isSelected ? 'selected' : ''}" draggable="true" data-index="${i}" onclick="selectAction(${i})" ondragstart="handleDragStart(event, ${i})" ondragover="handleDragOver(event, ${i})" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, ${i})" ondragend="handleDragEnd(event)">
                         <span class="drag-handle">☰</span>
                         <span class="action-num">${i + 1}.</span>
                         <span class="action-type ${a.type}">${typeLabel}</span>
@@ -816,6 +879,27 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        // アクション選択（選択位置の下に新しいアクションが挿入される）
+        function selectAction(index) {
+            if (selectedActionIndex === index) {
+                selectedActionIndex = null;  // 同じ位置をクリックで選択解除
+            } else {
+                selectedActionIndex = index;
+            }
+            renderActions();
+        }
+
+        // アクションを挿入（選択位置の次、または末尾）
+        function insertAction(action) {
+            if (selectedActionIndex !== null && selectedActionIndex < actions.length) {
+                actions.splice(selectedActionIndex + 1, 0, action);
+                selectedActionIndex++;  // 選択位置を挿入した位置に移動
+            } else {
+                actions.push(action);
+                selectedActionIndex = actions.length - 1;  // 追加した位置を選択
+            }
         }
 
         // アクション移動（上下）
@@ -874,6 +958,14 @@
         // アクション削除
         function removeAction(index) {
             actions.splice(index, 1);
+            // 選択位置を調整
+            if (selectedActionIndex !== null) {
+                if (selectedActionIndex === index) {
+                    selectedActionIndex = null;  // 選択中のアクションが削除された
+                } else if (selectedActionIndex > index) {
+                    selectedActionIndex--;  // 選択位置より前が削除されたので調整
+                }
+            }
             renderActions();
         }
 
@@ -945,6 +1037,7 @@
         function clearActions() {
             actions = [];
             currentFlowName = null;  // フロー名もリセット
+            selectedActionIndex = null;  // 選択もリセット
             renderActions();
             document.getElementById('result').className = 'result';
         }
@@ -1349,12 +1442,36 @@
         }
 
         let selectedFlows = new Set();
+        let currentFlowGroup = 'all';  // 'all', 'ai-normal', 'ai-dr', 'blog', 'image-gen'
+        const groupLabels = {
+            'ai-normal': 'AI-通常',
+            'ai-dr': 'AI-DR',
+            'blog': 'ブログ',
+            'image-gen': '画像生成'
+        };
+
+        function setFlowGroup(group) {
+            currentFlowGroup = group;
+            document.querySelectorAll('.flow-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.group === group);
+            });
+            renderFlows();
+        }
 
         function renderFlows() {
             const list = document.getElementById('flowList');
-            const flowNames = Object.keys(flows);
+            let flowNames = Object.keys(flows);
+
+            // グループでフィルタ
+            if (currentFlowGroup !== 'all') {
+                flowNames = flowNames.filter(name => flows[name].group === currentFlowGroup);
+            }
+
             if (flowNames.length === 0) {
-                list.innerHTML = '<p class="empty-message">フローを保存するとここに表示されます</p>';
+                const msg = currentFlowGroup === 'all'
+                    ? 'フローを保存するとここに表示されます'
+                    : `「${groupLabels[currentFlowGroup] || currentFlowGroup}」グループにフローがありません`;
+                list.innerHTML = `<p class="empty-message">${msg}</p>`;
                 updateSelectedFlowCount();
                 return;
             }
@@ -1367,11 +1484,13 @@
                 const isSelected = selectedFlows.has(name);
                 const orderNum = isSelected ? checkOrder.indexOf(name) + 1 : 0;
                 const orderBadge = orderNum > 0 ? `<span class="flow-order-badge">${orderNum}</span>` : '';
+                const groupBadge = flow.group ? `<span class="flow-group-badge ${flow.group}">${groupLabels[flow.group] || flow.group}</span>` : '';
                 return `
                     <div class="flow-item ${isSelected ? 'selected' : ''}">
                         <input type="checkbox" class="flow-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleFlowSelection('${escapedName}', this.checked)">
                         ${orderBadge}
                         <span class="flow-name" onclick="loadFlow('${escapedName}')" title="クリックで読み込み">${escapedName}</span>
+                        ${groupBadge}
                         <span class="flow-meta">${actionCount}件 | ${flow.created_at || ''}</span>
                         <div class="flow-actions">
                             <button class="load-btn" onclick="loadFlow('${escapedName}')">読込</button>
@@ -1393,6 +1512,26 @@
             renderFlows();
         }
 
+        // タブ内の全フローをチェック
+        function checkAllInTab() {
+            let flowNames = Object.keys(flows);
+            if (currentFlowGroup !== 'all') {
+                flowNames = flowNames.filter(name => flows[name].group === currentFlowGroup);
+            }
+            flowNames.forEach(name => selectedFlows.add(name));
+            renderFlows();
+        }
+
+        // タブ内の全フローのチェックを解除
+        function uncheckAllInTab() {
+            let flowNames = Object.keys(flows);
+            if (currentFlowGroup !== 'all') {
+                flowNames = flowNames.filter(name => flows[name].group === currentFlowGroup);
+            }
+            flowNames.forEach(name => selectedFlows.delete(name));
+            renderFlows();
+        }
+
         function updateSelectedFlowCount() {
             const count = selectedFlows.size;
             document.getElementById('selectedFlowCount').textContent = `${count}件選択中`;
@@ -1401,6 +1540,9 @@
 
         function showSaveFlowModal() {
             document.getElementById('flowNameInput').value = currentFlowName || '';
+            // 既存フローのグループを設定
+            const existingFlow = currentFlowName ? flows[currentFlowName] : null;
+            document.getElementById('flowGroupSelect').value = existingFlow?.group || currentFlowGroup !== 'all' ? currentFlowGroup : '';
             document.getElementById('flowModal').classList.add('show');
             document.getElementById('flowNameInput').focus();
         }
@@ -1417,13 +1559,23 @@
                 if (!confirm(`"${name}" は既に存在します。上書きしますか？`)) return;
             }
 
+            // ファイル保存アクションのフロー名とグループ名を更新
+            const group = document.getElementById('flowGroupSelect').value || '';
+            actions.forEach(a => {
+                if (a.type === 'save_to_file') {
+                    a.flow_name = name;
+                    a.group_name = group;
+                }
+            });
             await fetch('/api/flows', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, actions })
+                body: JSON.stringify({ name, actions, group })
             });
+            currentFlowName = name;  // 保存後にフロー名を更新
             hideFlowModal();
             await loadFlows();
+            renderActions();  // アクション一覧も更新（フロー名反映のため）
         }
 
         function loadFlow(name) {
@@ -1431,6 +1583,7 @@
             if (!flow) return;
             actions = JSON.parse(JSON.stringify(flow.actions)); // deep copy
             currentFlowName = name;  // フロー名を記憶
+            selectedActionIndex = null;  // 選択をリセット
             renderActions();
         }
 
@@ -1648,7 +1801,7 @@
                         return { ...a, text_id: textId };
                     }
                     if (a.type === 'save_to_file') {
-                        return { ...a, text_id: textId, flow_name: flowName };
+                        return { ...a, text_id: textId, flow_name: flowName, group_name: flow.group || '' };
                     }
                     return a;
                 });
