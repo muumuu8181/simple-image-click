@@ -673,9 +673,7 @@ def execute_paste(text_id: str, texts: dict, flow_name: str = None) -> dict:
     
     # Grok系フローの場合、日本語で回答するよう指示を追加
     if flow_name and ("Grok" in flow_name or "grok" in flow_name):
-        text = text + "
-
-※日本語で回答してください。"
+        text = text + "\n\n※日本語で回答してください。"
     
     pyperclip.copy(text)
     pyautogui.hotkey('ctrl', 'v')
