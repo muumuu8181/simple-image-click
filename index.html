@@ -218,7 +218,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.73</div>
+    <div class="version">v0.74</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -1193,7 +1193,7 @@
                 const res = await fetch('/api/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ actions: templateActions, interval, confidence, min_confidence: minConfidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed, start_delay: startDelay })
+                    body: JSON.stringify({ actions: templateActions, interval, confidence, min_confidence: minConfidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed, start_delay: startDelay, flow_name: currentFlowName })
                 });
                 const startResult = await res.json();
 
@@ -1264,7 +1264,7 @@
                             }
                             return a;
                         }),
-                        interval, confidence, min_confidence: minConfidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed, start_delay: startDelay
+                        interval, confidence, min_confidence: minConfidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed, start_delay: startDelay, flow_name: currentFlowName
                     })
                 });
                 const startResult = await res.json();
@@ -1906,7 +1906,8 @@
                             confidence,
                             wait_timeout: waitTimeout,
                             cursor_speed: cursorSpeed,
-                            start_delay: startDelay
+                            start_delay: startDelay,
+                            flow_name: flowName
                         })
                     });
                     const startResult = await res.json();

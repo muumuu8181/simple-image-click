@@ -111,6 +111,7 @@ class ExecuteRequest(BaseModel):
     wait_timeout: float = DEFAULT_WAIT_TIMEOUT
     cursor_speed: float = 0.5  # カーソル移動速度（秒）
     start_delay: float = 0.0  # 開始前待機（秒）- 最初のアクション前に待つ
+    flow_name: str | None = None  # フロー名（Grok日本語対応などで使用）
 
 
 class ExecuteResult(BaseModel):
@@ -421,15 +422,14 @@ def run_actions_in_background(request_dict: dict):
     interval = request_dict.get("interval", DEFAULT_CLICK_INTERVAL)
     start_delay = request_dict.get("start_delay", 0.0)
 
-    # アクション配列からflow_nameを取得（Grok日本語対応用）
-    detected_flow_name = None
-    for a in actions:
-        if a.get('type') == 'save_to_file' and a.get('flow_name'):
-            detected_flow_name = a.get('flow_name')
-            print(f'[DEBUG] detected_flow_name: {detected_flow_name}')
-            break
-    if not detected_flow_name:
-        print(f'[DEBUG] No flow_name found in actions. Actions: {[a.get("type") for a in actions]}')
+    # フロー名を取得（リクエストから直接、またはsave_to_fileアクションから）
+    flow_name_for_paste = request_dict.get('flow_name')
+    if not flow_name_for_paste:
+        # 後方互換: save_to_fileアクションからflow_nameを取得
+        for a in actions:
+            if a.get('type') == 'save_to_file' and a.get('flow_name'):
+                flow_name_for_paste = a.get('flow_name')
+                break
 
     # 開始前待機
     if start_delay > 0:
@@ -471,7 +471,7 @@ def run_actions_in_background(request_dict: dict):
             elif action_type == "click_or":
                 result = execute_click_or(image_names, confidence, min_confidence)
             elif action_type == "paste":
-                result = execute_paste(text_id, texts, detected_flow_name)
+                result = execute_paste(text_id, texts, flow_name_for_paste)
             elif action_type == "wait":
                 result = execute_wait(image_name, confidence, wait_timeout, cursor_speed)
             elif action_type == "wait_disappear":
