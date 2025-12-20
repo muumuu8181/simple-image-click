@@ -4,6 +4,8 @@ texts.json
 flows.json
 batch_log.txt
 output/
+server.log
+server_err.log
 
 # Python
 __pycache__/

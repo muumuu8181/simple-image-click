@@ -570,7 +570,7 @@ def execute_click(image_name: str, confidence: float, min_confidence: float = 0.
                 pass
             except Exception:
                 pass
-            current_conf -= 0.05
+            current_conf -= 0.02
 
         # 見つからなかった場合、次のリトライ前に1秒待機
         if retry < max_retries - 1:
@@ -613,7 +613,7 @@ def execute_click_or(image_names: list[str], confidence: float, min_confidence: 
                 except Exception:
                     pass
 
-            current_conf -= 0.05
+            current_conf -= 0.02
 
         # 見つからなかった場合、次のリトライ前に1秒待機
         if retry < max_retries - 1:
@@ -682,7 +682,10 @@ def execute_wait(image_name: str, confidence: float, timeout: float, cursor_spee
             location = None
 
         if location is not None:
-            return {"status": "success", "message": f"[待機] 画像を検出: {image_name} (位置: {location})"}
+            # 検出した画像の100ピクセル上にカーソルを移動（スクロールエリアをクリックしやすくする）
+            target_y = max(0, location.y - 100)
+            pyautogui.moveTo(location.x, target_y, duration=0.2)
+            return {"status": "success", "message": f"[待機] 画像を検出: {image_name} (位置: {location}, カーソル移動先: y={target_y})"}
 
         # 待機中を示すためにカーソルを左右にスムーズに動かす
         current_pos = pyautogui.position()
@@ -764,6 +767,7 @@ def execute_pagedown(count: int) -> dict:
         count = 1
 
     # まず現在位置でクリックしてフォーカスを当てる
+    click_pos = pyautogui.position()
     pyautogui.click()
     time.sleep(0.1)
 
@@ -772,7 +776,7 @@ def execute_pagedown(count: int) -> dict:
         if i < count - 1:
             time.sleep(0.1)  # 連打時の間隔
 
-    return {"status": "success", "message": f"[PageDown] {count}回押しました"}
+    return {"status": "success", "message": f"[PageDown] {count}回押しました (クリック位置: {click_pos})"}
 
 
 def sanitize_filename(text: str, max_length: int = 30) -> str:
@@ -786,6 +790,55 @@ def sanitize_filename(text: str, max_length: int = 30) -> str:
     if len(sanitized) > max_length:
         sanitized = sanitized[:max_length]
     return sanitized or "untitled"
+
+def analyze_file_character_counts(filepath: Path) -> dict:
+    """ファイル内の各AIセクションの文字数をカウント"""
+    import re
+
+    if not filepath.exists():
+        return {"total": 0, "sections": []}
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            file_content = f.read()
+    except Exception:
+        return {"total": 0, "sections": []}
+
+    # セパレータで分割
+    # ファイル形式:
+    # ##################################################
+    # フロー: name
+    # 日時: timestamp
+    # ##################################################
+    # [body content]
+    separator = "#" * 50
+    sections = file_content.split(separator)
+
+    results = []
+    i = 0
+    while i < len(sections):
+        section = sections[i]
+        if "フロー:" in section:
+            # フロー名を抽出
+            match = re.search(r"フロー:\s*(.+)", section)
+            if match:
+                flow_name = match.group(1).strip()
+                # 次のセクションが本文
+                body_text = ""
+                if i + 1 < len(sections):
+                    body_text = sections[i + 1].strip()
+                char_count = len(body_text)
+                line_count = len([l for l in body_text.split("\n") if l.strip()])
+                results.append({
+                    "flow_name": flow_name,
+                    "chars": char_count,
+                    "lines": line_count
+                })
+        i += 1
+
+    total_chars = sum(r["chars"] for r in results)
+    return {"total": total_chars, "sections": results}
+
 
 
 def execute_save_to_file(text_id: str, flow_name: str, group_name: str, texts: dict) -> dict:
@@ -844,7 +897,16 @@ def execute_save_to_file(text_id: str, flow_name: str, group_name: str, texts: d
     try:
         with open(filepath, "a", encoding="utf-8") as f:
             f.write(save_content)
-        return {"status": "success", "message": f"[ファイル保存] {filepath.name} に追記しました"}
+        
+        # 文字数カウントを取得（AI-通常、AI-DRの場合）
+        char_stats = None
+        if group_name in ['ai-normal', 'ai-dr']:
+            char_stats = analyze_file_character_counts(filepath)
+        
+        result = {"status": "success", "message": f"[ファイル保存] {filepath.name} に追記しました"}
+        if char_stats:
+            result["char_stats"] = char_stats
+        return result
     except Exception as e:
         return {"status": "error", "message": f"ファイル保存エラー: {e}"}
 
@@ -881,7 +943,7 @@ def execute_loop_click(image_name: str, confidence: float, min_confidence: float
                     break
             except:
                 pass
-            current_conf -= 0.05
+            current_conf -= 0.02
 
         if not clicked:
             fail_count += 1

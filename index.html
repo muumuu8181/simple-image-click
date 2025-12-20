@@ -218,7 +218,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.61</div>
+    <div class="version">v0.68</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -316,7 +316,7 @@
         <div class="two-col" style="grid-template-columns: 2fr 3fr;">
             <!-- 左: アクション順序 -->
             <div class="panel">
-                <h2>5. アクション順序</h2>
+                <h2>5. アクション順序 <span id="loadedFlowName" style="font-size:14px;color:#17a2b8;font-weight:normal;"></span></h2>
                 <div class="action-buttons">
                     <span style="color:#666;font-size:12px;">モード:</span>
                     <button class="btn btn-success" id="modeClick" onclick="setAddMode('click')" style="padding:5px 10px;font-size:11px;">クリック</button>
@@ -791,6 +791,10 @@
 
         // アクション描画
         function renderActions() {
+            const flowNameSpan = document.getElementById('loadedFlowName');
+            if (flowNameSpan) {
+                flowNameSpan.textContent = currentFlowName ? '（' + currentFlowName + '）' : '';
+            }
             const list = document.getElementById('actionList');
             const hasPasteAction = actions.some(a => a.type === 'paste');
             if (actions.length === 0) {
@@ -1206,7 +1210,17 @@
                 const res = await fetch('/api/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ actions, interval, confidence, min_confidence: minConfidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed, start_delay: startDelay })
+                    body: JSON.stringify({
+                        actions: actions.map(a => {
+                            if (a.type === 'save_to_file') {
+                                const flow = currentFlowName ? flows[currentFlowName] : null;
+                                console.log('[DEBUG] save_to_file:', currentFlowName, flow?.group);
+                                return { ...a, flow_name: currentFlowName || a.flow_name, group_name: flow?.group || '' };
+                            }
+                            return a;
+                        }),
+                        interval, confidence, min_confidence: minConfidence, wait_timeout: waitTimeout, cursor_speed: cursorSpeed, start_delay: startDelay
+                    })
                 });
                 const startResult = await res.json();
 
