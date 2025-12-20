@@ -178,6 +178,20 @@ wmic process where processid=XXXXX call terminate
 wmic process where "name like '%python%'" call terminate
 ```
 
+**Claude Code経由での強制終了:**
+
+Claude Codeでスクリプト実行中に止めたい場合：
+```bash
+# 1. PIDを確認
+tasklist | findstr python
+
+# 2. 表示されたPIDで強制終了（例: PID 227308）
+powershell.exe -Command "Stop-Process -Id 227308 -Force"
+
+# 3. 終了確認（結果が空なら成功）
+tasklist | findstr python
+```
+
 ### 中止ボタンが効かない場合
 
 実行中に「中止」ボタンやEscキーが効かない場合：
@@ -204,6 +218,36 @@ wmic process where "name like '%python%'" call terminate
 
 画像待機（最大30秒）中、ユーザーが「フリーズした？」と不安になる。
 カーソルが小さく左右に動くことで「待機中だとわかっているよ」を視覚的に示す。
+
+## Claude Code連携
+
+### claude_query.py
+
+Claude Codeから他のAI（Liner等）に自動でクエリを送るスクリプト。
+
+```bash
+python claude_query.py "質問内容" [フロー名]
+# フロー名省略時は「通常プロンプト-Liner」がデフォルト
+```
+
+### 対話プロンプトのベストプラクティス
+
+他のAIと対話する際、以下の一文を質問に追加することで、より充実した議論が可能になる：
+
+```
+議論をより有意義で充実したものにするために、あなたの方からも疑問点や追加テーマ、提案などがあれば、ぜひ共有してください。
+```
+
+**効果：**
+- AIが受動的に答えるだけでなく、能動的に議論に参加するようになる
+- 予想外の視点や関連トピックが提示される可能性が高まる
+- 対話がより双方向的になる
+
+### 外部実行検知（v0.71〜）
+
+`claude_query.py`などから実行が開始されると、UIが自動検知して：
+- ローディング画面と中止ボタンを表示
+- Escキーまたは中止ボタンで停止可能
 
 ## バージョン履歴
 

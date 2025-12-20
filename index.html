@@ -218,7 +218,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.68</div>
+    <div class="version">v0.73</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -299,6 +299,7 @@
                 <button class="flow-tab active" data-group="all" onclick="setFlowGroup('all')">全て</button>
                 <button class="flow-tab" data-group="ai-normal" onclick="setFlowGroup('ai-normal')">AI-通常</button>
                 <button class="flow-tab" data-group="ai-dr" onclick="setFlowGroup('ai-dr')">AI-DR</button>
+                <button class="flow-tab" data-group="ai-chat" onclick="setFlowGroup('ai-chat')">AI会話</button>
                 <button class="flow-tab" data-group="blog" onclick="setFlowGroup('blog')">ブログ投稿</button>
                 <button class="flow-tab" data-group="image-gen" onclick="setFlowGroup('image-gen')">画像生成</button>
             </div>
@@ -399,6 +400,7 @@
                     <option value="">未分類</option>
                     <option value="ai-normal">AI-通常</option>
                     <option value="ai-dr">AI-DR</option>
+                    <option value="ai-chat">AI会話</option>
                     <option value="blog">ブログ投稿</option>
                     <option value="image-gen">画像生成</option>
                 </select>
@@ -418,6 +420,26 @@
             <div class="modal-buttons">
                 <button class="btn btn-secondary" onclick="hideRenameFlowModal()">キャンセル</button>
                 <button class="btn btn-info" onclick="confirmRenameFlow()">変更 (Enter)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- グループ変更モーダル -->
+    <div class="modal" id="changeGroupModal">
+        <div class="modal-content">
+            <h3>グループを変更</h3>
+            <p id="changeGroupFlowName" style="color:#666;margin-bottom:10px;"></p>
+            <select id="changeGroupSelect" style="width:100%;padding:10px;font-size:14px;border:1px solid #ddd;border-radius:4px;">
+                <option value="">(未分類)</option>
+                <option value="ai-normal">AI-通常</option>
+                <option value="ai-dr">AI-DR</option>
+                <option value="ai-chat">AI会話</option>
+                <option value="blog">ブログ投稿</option>
+                <option value="image-gen">画像生成</option>
+            </select>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="hideChangeGroupModal()">キャンセル</button>
+                <button class="btn btn-purple" onclick="confirmChangeGroup()">変更</button>
             </div>
         </div>
     </div>
@@ -478,6 +500,7 @@
             loadSearchTags();  // 検索タグを読み込み
             setupEventListeners();
             setAddMode('click');
+            startBackgroundPolling();  // 外部実行検知用ポーリング開始
         });
 
         // 設定の保存・読み込み（localStorage）
@@ -1191,6 +1214,28 @@
 
         // 実行状態ポーリング用
         let pollingInterval = null;
+        let backgroundPollingInterval = null;
+
+        // 外部実行検知用バックグラウンドポーリング
+        function startBackgroundPolling() {
+            if (backgroundPollingInterval) return;
+            backgroundPollingInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/execute/status');
+                    const status = await res.json();
+                    const loading = document.getElementById('loading');
+
+                    if (status.is_running && !loading.classList.contains('show')) {
+                        // 外部から実行が開始された
+                        loading.classList.add('show');
+                        document.getElementById('progressList').innerHTML = '<div style="color:#17a2b8;">外部から実行検知...</div>';
+                        startProgressPolling();
+                    }
+                } catch (e) {
+                    // サーバー接続エラーは無視
+                }
+            }, 1000);
+        }
 
         // 実行
         async function executeActions() {
@@ -1456,10 +1501,11 @@
         }
 
         let selectedFlows = new Set();
-        let currentFlowGroup = 'all';  // 'all', 'ai-normal', 'ai-dr', 'blog', 'image-gen'
+        let currentFlowGroup = 'all';  // 'all', 'ai-normal', 'ai-dr', 'ai-chat', 'blog', 'image-gen'
         const groupLabels = {
             'ai-normal': 'AI-通常',
             'ai-dr': 'AI-DR',
+            'ai-chat': 'AI会話',
             'blog': 'ブログ',
             'image-gen': '画像生成'
         };
@@ -1509,6 +1555,7 @@
                         <div class="flow-actions">
                             <button class="load-btn" onclick="loadFlow('${escapedName}')">読込</button>
                             <button class="rename-btn" onclick="showRenameFlowModal('${escapedName}')">名前変更</button>
+                            <button class="group-btn" onclick="showChangeGroupModal('${escapedName}')" title="グループ変更">📁</button>
                             <button class="delete-btn" onclick="deleteFlow('${escapedName}')">削除</button>
                         </div>
                     </div>
@@ -1621,6 +1668,33 @@
         function hideRenameFlowModal() {
             document.getElementById('renameFlowModal').classList.remove('show');
             renamingFlowName = null;
+        }
+
+
+        // グループ変更
+        let changingGroupFlowName = null;
+
+        function showChangeGroupModal(name) {
+            changingGroupFlowName = name;
+            document.getElementById('changeGroupFlowName').textContent = name;
+            document.getElementById('changeGroupSelect').value = flows[name]?.group || '';
+            document.getElementById('changeGroupModal').classList.add('show');
+        }
+
+        function hideChangeGroupModal() {
+            document.getElementById('changeGroupModal').classList.remove('show');
+            changingGroupFlowName = null;
+        }
+
+        async function confirmChangeGroup() {
+            const newGroup = document.getElementById('changeGroupSelect').value;
+            await fetch(`/api/flows/${encodeURIComponent(changingGroupFlowName)}/group`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ group: newGroup })
+            });
+            hideChangeGroupModal();
+            await loadFlows();
         }
 
         async function confirmRenameFlow() {

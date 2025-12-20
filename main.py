@@ -304,6 +304,23 @@ async def delete_flow(flow_name: str):
     save_flows(flows)
     return {"success": True, "flows": flows}
 
+@app.put("/api/flows/{flow_name}/group")
+async def change_flow_group(flow_name: str, data: dict):
+    """フローのグループを変更"""
+    flows = load_flows()
+    if flow_name not in flows:
+        raise HTTPException(status_code=404, detail=f"フローが見つかりません: {flow_name}")
+
+    new_group = data.get("group", "")
+    flows[flow_name]["group"] = new_group
+
+    # save_to_fileアクションのgroup_nameも更新
+    for action in flows[flow_name].get("actions", []):
+        if action.get("type") == "save_to_file":
+            action["group_name"] = new_group
+
+    save_flows(flows)
+    return {"success": True, "flows": flows}
 
 @app.get("/api/settings")
 async def get_settings():
@@ -404,6 +421,16 @@ def run_actions_in_background(request_dict: dict):
     interval = request_dict.get("interval", DEFAULT_CLICK_INTERVAL)
     start_delay = request_dict.get("start_delay", 0.0)
 
+    # アクション配列からflow_nameを取得（Grok日本語対応用）
+    detected_flow_name = None
+    for a in actions:
+        if a.get('type') == 'save_to_file' and a.get('flow_name'):
+            detected_flow_name = a.get('flow_name')
+            print(f'[DEBUG] detected_flow_name: {detected_flow_name}')
+            break
+    if not detected_flow_name:
+        print(f'[DEBUG] No flow_name found in actions. Actions: {[a.get("type") for a in actions]}')
+
     # 開始前待機
     if start_delay > 0:
         execution_state.add_result({"status": "info", "message": f"[開始待機] {start_delay}秒待機中..."})
@@ -444,7 +471,7 @@ def run_actions_in_background(request_dict: dict):
             elif action_type == "click_or":
                 result = execute_click_or(image_names, confidence, min_confidence)
             elif action_type == "paste":
-                result = execute_paste(text_id, texts)
+                result = execute_paste(text_id, texts, detected_flow_name)
             elif action_type == "wait":
                 result = execute_wait(image_name, confidence, wait_timeout, cursor_speed)
             elif action_type == "wait_disappear":
@@ -637,12 +664,19 @@ def execute_click_or(image_names: list[str], confidence: float, min_confidence: 
     return {"status": "not_found", "message": f"画面上にどの画像も見つかりません: {detail_str} ({max_retries}回試行後も失敗、最低設定: {int(min_confidence*100)}%)"}
 
 
-def execute_paste(text_id: str, texts: dict) -> dict:
+def execute_paste(text_id: str, texts: dict, flow_name: str = None) -> dict:
     """テキストを貼り付け（IDベース）"""
     if text_id is None or text_id not in texts:
         return {"status": "error", "message": f"テキストが見つかりません: ID={text_id}"}
 
     text = texts[text_id]["text"]
+    
+    # Grok系フローの場合、日本語で回答するよう指示を追加
+    if flow_name and ("Grok" in flow_name or "grok" in flow_name):
+        text = text + "
+
+※日本語で回答してください。"
+    
     pyperclip.copy(text)
     pyautogui.hotkey('ctrl', 'v')
     return {"status": "success", "message": f"[貼付] [ID:{text_id}] {text[:30]}..."}
@@ -703,7 +737,10 @@ def execute_wait(image_name: str, confidence: float, timeout: float, cursor_spee
 
 
 def execute_wait_disappear(image_name: str, confidence: float, timeout: float, cursor_speed: float = 0.5) -> dict:
-    """画像が消えるまで待機（消失待機）"""
+    """画像が消えるまで待機（消失待機）
+
+    誤検知防止のため、連続3回「見つからない」を確認してから成功とする
+    """
     if not image_name:
         return {"status": "error", "message": "画像が指定されていません"}
 
@@ -724,12 +761,18 @@ def execute_wait_disappear(image_name: str, confidence: float, timeout: float, c
     start_time = time.time()
     move_direction = 1
     move_amount = 100
+    consecutive_not_found = 0  # 連続して見つからなかった回数
+    required_consecutive = 3   # 成功判定に必要な連続回数
+    check_count = 0            # 総チェック回数（ログ用）
 
     while time.time() - start_time < timeout:
         # 中止チェック（両方のフラグをチェック）
         if execution_abort_flag or execution_state.abort_flag:
             return {"status": "aborted", "message": f"[消失待機] 中止されました: {image_name}"}
 
+        check_count += 1
+
+        # 指定された信頼度で検索
         try:
             location = pyautogui.locateCenterOnScreen(str(image_path), confidence=confidence)
         except pyautogui.ImageNotFoundException:
@@ -737,10 +780,36 @@ def execute_wait_disappear(image_name: str, confidence: float, timeout: float, c
         except Exception:
             location = None
 
+        # 見つからなかった場合、低い信頼度で再チェックして実際の検出状況を確認
+        actual_conf = None
         if location is None:
-            elapsed = time.time() - start_time
-            return {"status": "success", "message": f"[消失待機] 画像が消えました: {image_name} ({elapsed:.1f}秒後)"}
+            for test_conf in [0.3, 0.5, 0.7, 0.8, 0.9]:
+                try:
+                    test_loc = pyautogui.locateCenterOnScreen(str(image_path), confidence=test_conf)
+                    if test_loc:
+                        actual_conf = test_conf
+                        break
+                except:
+                    pass
 
+        if location is None:
+            consecutive_not_found += 1
+            if actual_conf:
+                print(f"[DEBUG] 消失待機 チェック#{check_count}: 閾値{int(confidence*100)}%で不検出、実際は{int(actual_conf*100)}%で存在 ({consecutive_not_found}/{required_consecutive}回連続)")
+            else:
+                print(f"[DEBUG] 消失待機 チェック#{check_count}: 完全に見つからず（30%未満） ({consecutive_not_found}/{required_consecutive}回連続)")
+
+            # 50%以上で見つかる場合は「まだ存在している」のでリセット
+            if actual_conf and actual_conf >= 0.5:
+                print(f"[DEBUG] → 50%以上で検出されるため、連続カウントをリセット")
+                consecutive_not_found = 0
+            elif consecutive_not_found >= required_consecutive:
+                elapsed = time.time() - start_time
+                return {"status": "success", "message": f"[消失待機] 画像が消えました: {image_name} ({elapsed:.1f}秒後、{check_count}回チェック、{required_consecutive}回連続不検出で確定)"}
+        else:
+            if consecutive_not_found > 0:
+                print(f"[DEBUG] 消失待機 チェック#{check_count}: 検出 (連続不検出{consecutive_not_found}回→リセット)")
+            consecutive_not_found = 0  # 見つかったらリセット
         # 待機中を示すためにカーソルを左右にスムーズに動かす
         current_pos = pyautogui.position()
         target_x = current_pos[0] + (move_amount * move_direction)
@@ -749,7 +818,8 @@ def execute_wait_disappear(image_name: str, confidence: float, timeout: float, c
 
         time.sleep(0.5)  # 画像チェックの間隔（消失待機は少し長めに）
 
-    return {"status": "timeout", "message": f"タイムアウト: {image_name} が {timeout}秒以内に消えませんでした"}
+    return {"status": "timeout", "message": f"タイムアウト: {image_name} が {timeout}秒以内に消えませんでした ({check_count}回チェック)"}
+
 
 
 def execute_wait_seconds(seconds: float) -> dict:
@@ -850,6 +920,7 @@ def execute_save_to_file(text_id: str, flow_name: str, group_name: str, texts: d
     GROUP_LABELS = {
         'ai-normal': 'AI-通常',
         'ai-dr': 'AI-DR',
+        'ai-chat': 'AI会話',
         'blog': 'ブログ投稿',
         'image-gen': '画像生成'
     }
@@ -893,17 +964,24 @@ def execute_save_to_file(text_id: str, flow_name: str, group_name: str, texts: d
     separator = "#" * 50
     save_content = f"\n{separator}\nフロー: {flow_name or '(名前なし)'}\n日時: {timestamp}\n{separator}\n{clipboard_content}\n"
 
+    # 今回保存する内容の文字数をカウント（clipboard_contentの文字数）
+    content_char_count = len(clipboard_content.strip())
+
     # ファイルに追記
     try:
         with open(filepath, "a", encoding="utf-8") as f:
             f.write(save_content)
-        
+            # AI-通常、AI-DRの場合は文字数ログも追記
+            if group_name in ['ai-normal', 'ai-dr']:
+                char_log = f"\n---\n📊 {timestamp} | {flow_name}: {content_char_count}文字\n"
+                f.write(char_log)
+
         # 文字数カウントを取得（AI-通常、AI-DRの場合）
         char_stats = None
         if group_name in ['ai-normal', 'ai-dr']:
             char_stats = analyze_file_character_counts(filepath)
-        
-        result = {"status": "success", "message": f"[ファイル保存] {filepath.name} に追記しました"}
+
+        result = {"status": "success", "message": f"[ファイル保存] {filepath.name} に追記しました ({content_char_count}文字)"}
         if char_stats:
             result["char_stats"] = char_stats
         return result

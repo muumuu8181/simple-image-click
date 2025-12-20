@@ -26,3 +26,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Debug screenshots (root level)
+*.png
