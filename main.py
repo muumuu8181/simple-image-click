@@ -424,6 +424,7 @@ def run_actions_in_background(request_dict: dict):
 
     # フロー名を取得（リクエストから直接、またはsave_to_fileアクションから）
     flow_name_for_paste = request_dict.get('flow_name')
+    print(f"[DEBUG] execute: flow_name from request = {flow_name_for_paste}")
     if not flow_name_for_paste:
         # 後方互換: save_to_fileアクションからflow_nameを取得
         for a in actions:
@@ -670,11 +671,13 @@ def execute_paste(text_id: str, texts: dict, flow_name: str = None) -> dict:
         return {"status": "error", "message": f"テキストが見つかりません: ID={text_id}"}
 
     text = texts[text_id]["text"]
-    
+
     # Grok系フローの場合、日本語で回答するよう指示を追加
+    print(f"[DEBUG] execute_paste: flow_name={flow_name}")
     if flow_name and ("Grok" in flow_name or "grok" in flow_name):
         text = text + "\n\n※日本語で回答してください。"
-    
+        print(f"[DEBUG] Grok detected, added Japanese instruction")
+
     pyperclip.copy(text)
     pyautogui.hotkey('ctrl', 'v')
     return {"status": "success", "message": f"[貼付] [ID:{text_id}] {text[:30]}..."}
