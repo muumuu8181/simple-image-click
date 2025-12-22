@@ -323,6 +323,19 @@ async def change_flow_group(flow_name: str, data: dict):
     save_flows(flows)
     return {"success": True, "flows": flows}
 
+@app.put("/api/flows/{flow_name}/suspend")
+async def toggle_flow_suspend(flow_name: str, data: dict):
+    """フローの休止状態を変更"""
+    flows = load_flows()
+    if flow_name not in flows:
+        raise HTTPException(status_code=404, detail=f"フローが見つかりません: {flow_name}")
+
+    suspended = data.get("suspended", False)
+    flows[flow_name]["suspended"] = suspended
+
+    save_flows(flows)
+    return {"success": True, "flows": flows}
+
 @app.get("/api/settings")
 async def get_settings():
     """現在の設定を返す"""
@@ -469,6 +482,8 @@ def run_actions_in_background(request_dict: dict):
         try:
             if action_type == "click":
                 result = execute_click(image_name, confidence, min_confidence)
+            elif action_type == "click_if_exists":
+                result = execute_click_if_exists(image_name, confidence, min_confidence)
             elif action_type == "click_or":
                 result = execute_click_or(image_names, confidence, min_confidence)
             elif action_type == "paste":
@@ -611,6 +626,36 @@ def execute_click(image_name: str, confidence: float, min_confidence: float = 0.
         return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name} ({max_retries}回試行後も失敗、最大{int(found_conf*100)}%で検出、最低設定は{int(min_confidence*100)}%)"}
 
     return {"status": "not_found", "message": f"画面上に画像が見つかりません: {image_name} ({max_retries}回試行後も失敗、30%未満)"}
+
+
+def execute_click_if_exists(image_name: str, confidence: float, min_confidence: float = 0.7) -> dict:
+    """画像が存在すればクリック、なければスキップ（エラーにしない）"""
+    if not image_name:
+        return {"status": "skipped", "message": "[スキップ] 画像が指定されていません"}
+
+    image_path = IMAGES_DIR / image_name
+    if not image_path.exists():
+        return {"status": "skipped", "message": f"[スキップ] 画像ファイルが見つかりません: {image_name}"}
+
+    # 段階的に精度を下げて試す
+    current_conf = confidence
+    while current_conf >= min_confidence - 0.001:
+        try:
+            location = pyautogui.locateCenterOnScreen(str(image_path), confidence=current_conf)
+            if location is not None:
+                pyautogui.click(location)
+                if current_conf < confidence - 0.001:
+                    return {"status": "success", "message": f"[条件クリック] {image_name} (位置: {location}, 精度{int(round(current_conf*100))}%で検出)"}
+                else:
+                    return {"status": "success", "message": f"[条件クリック] {image_name} (位置: {location})"}
+        except pyautogui.ImageNotFoundException:
+            pass
+        except Exception:
+            pass
+        current_conf -= 0.02
+
+    # 見つからなかった場合はスキップ（エラーではない）
+    return {"status": "skipped", "message": f"[スキップ] 画像が見つからないためスキップ: {image_name}"}
 
 
 def execute_click_or(image_names: list[str], confidence: float, min_confidence: float = 0.7, max_retries: int = 2) -> dict:

@@ -202,6 +202,9 @@
         .flow-tab { padding: 6px 12px; border: 1px solid #ddd; background: #f8f9fa; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
         .flow-tab:hover { background: #e9ecef; }
         .flow-tab.active { background: #6f42c1; color: white; border-color: #6f42c1; }
+        .flow-tab-wrapper { display: flex; flex-direction: column; gap: 2px; }
+        .tab-count-input { font-size: 14px; font-weight: bold; color: #6f42c1; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px 0; background: #f8f9fa; cursor: default; width: 30px; }
+        .tab-count-input.has-count { color: #dc3545; background: #fff0f0; border-color: #dc3545; }
         .flow-group-badge { font-size: 9px; padding: 2px 6px; border-radius: 10px; margin-left: 6px; }
         .flow-group-badge.ai-normal { background: #e3f2fd; color: #1976d2; }
         .flow-group-badge.ai-dr { background: #fce4ec; color: #c2185b; }
@@ -296,12 +299,30 @@
         <div class="panel">
             <h2>4. 保存済みフロー</h2>
             <div class="flow-tabs" style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">
-                <button class="flow-tab active" data-group="all" onclick="setFlowGroup('all')">全て</button>
-                <button class="flow-tab" data-group="ai-normal" onclick="setFlowGroup('ai-normal')">AI-通常</button>
-                <button class="flow-tab" data-group="ai-dr" onclick="setFlowGroup('ai-dr')">AI-DR</button>
-                <button class="flow-tab" data-group="ai-chat" onclick="setFlowGroup('ai-chat')">AI会話</button>
-                <button class="flow-tab" data-group="blog" onclick="setFlowGroup('blog')">ブログ投稿</button>
-                <button class="flow-tab" data-group="image-gen" onclick="setFlowGroup('image-gen')">画像生成</button>
+                <div class="flow-tab-wrapper">
+                    <input type="text" class="tab-count-input" id="count-ai-normal" value="0" readonly>
+                    <button class="flow-tab active" data-group="ai-normal" onclick="setFlowGroup('ai-normal')">AI-通常</button>
+                </div>
+                <div class="flow-tab-wrapper">
+                    <input type="text" class="tab-count-input" id="count-ai-dr" value="0" readonly>
+                    <button class="flow-tab" data-group="ai-dr" onclick="setFlowGroup('ai-dr')">AI-DR</button>
+                </div>
+                <div class="flow-tab-wrapper">
+                    <input type="text" class="tab-count-input" id="count-ai-chat" value="0" readonly>
+                    <button class="flow-tab" data-group="ai-chat" onclick="setFlowGroup('ai-chat')">AI会話</button>
+                </div>
+                <div class="flow-tab-wrapper">
+                    <input type="text" class="tab-count-input" id="count-blog" value="0" readonly>
+                    <button class="flow-tab" data-group="blog" onclick="setFlowGroup('blog')">ブログ投稿</button>
+                </div>
+                <div class="flow-tab-wrapper">
+                    <input type="text" class="tab-count-input" id="count-image-gen" value="0" readonly>
+                    <button class="flow-tab" data-group="image-gen" onclick="setFlowGroup('image-gen')">画像生成</button>
+                </div>
+                <div class="flow-tab-wrapper">
+                    <input type="text" class="tab-count-input" id="count-all" value="0" readonly>
+                    <button class="flow-tab" data-group="all" onclick="setFlowGroup('all')">全て</button>
+                </div>
             </div>
             <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
                 <button onclick="checkAllInTab()" style="padding:4px 10px;font-size:11px;background:#6f42c1;color:white;border:none;border-radius:4px;cursor:pointer;">☑ まとめてチェック</button>
@@ -1501,7 +1522,7 @@
         }
 
         let selectedFlows = new Set();
-        let currentFlowGroup = 'all';  // 'all', 'ai-normal', 'ai-dr', 'ai-chat', 'blog', 'image-gen'
+        let currentFlowGroup = 'ai-normal';  // 'all', 'ai-normal', 'ai-dr', 'ai-chat', 'blog', 'image-gen'
         const groupLabels = {
             'ai-normal': 'AI-通常',
             'ai-dr': 'AI-DR',
@@ -1597,6 +1618,22 @@
             const count = selectedFlows.size;
             document.getElementById('selectedFlowCount').textContent = `${count}件選択中`;
             document.getElementById('batchHint').style.display = count > 0 ? 'inline' : 'none';
+            
+            // 各グループの選択数を更新
+            const groups = ['ai-normal', 'ai-dr', 'ai-chat', 'blog', 'image-gen', 'all'];
+            groups.forEach(group => {
+                let groupCount;
+                if (group === 'all') {
+                    groupCount = selectedFlows.size;
+                } else {
+                    groupCount = Array.from(selectedFlows).filter(name => flows[name]?.group === group).length;
+                }
+                const countEl = document.getElementById('count-' + group);
+                if (countEl) {
+                    countEl.value = groupCount;
+                    countEl.classList.toggle('has-count', groupCount > 0);
+                }
+            });
         }
 
         function showSaveFlowModal() {
