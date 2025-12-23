@@ -91,10 +91,11 @@ pyautogui.FAILSAFE = True  # 画面左上にマウスを移動すると停止
 
 class ActionItem(BaseModel):
     """アクション項目"""
-    type: str  # "click", "paste", "wait", "click_or", "wait_disappear", "wait_seconds", "pagedown", "save_to_file"
+    type: str  # "click", "paste", "paste_fixed", "wait", "click_or", "wait_disappear", "wait_seconds", "pagedown", "save_to_file"
     image_name: str | None = None  # click, wait, wait_disappear で使用
     image_names: list[str] | None = None  # click_or で使用（複数画像）
     text_id: str | None = None  # paste, save_to_file で使用（8桁ID）
+    text: str | None = None  # paste_fixed で使用（固定テキスト）
     text_index: int | None = None  # 後方互換用（非推奨）
     seconds: float | None = None  # wait_seconds で使用
     count: int | None = None  # pagedown で使用（回数）
@@ -465,6 +466,7 @@ def run_actions_in_background(request_dict: dict):
         image_name = action_dict.get("image_name")
         image_names = action_dict.get("image_names")
         text_id = action_dict.get("text_id")
+        fixed_text = action_dict.get("text")  # paste_fixed用
         seconds = action_dict.get("seconds")
         count = action_dict.get("count")
         flow_name = action_dict.get("flow_name")
@@ -488,6 +490,8 @@ def run_actions_in_background(request_dict: dict):
                 result = execute_click_or(image_names, confidence, min_confidence)
             elif action_type == "paste":
                 result = execute_paste(text_id, texts, flow_name_for_paste)
+            elif action_type == "paste_fixed":
+                result = execute_paste_fixed(fixed_text, flow_name_for_paste)
             elif action_type == "wait":
                 result = execute_wait(image_name, confidence, wait_timeout, cursor_speed)
             elif action_type == "wait_disappear":
@@ -734,6 +738,23 @@ def execute_paste(text_id: str, texts: dict, flow_name: str = None) -> dict:
     pyperclip.copy(text)
     pyautogui.hotkey('ctrl', 'v')
     return {"status": "success", "message": f"[貼付] [ID:{text_id}] {text[:30]}..."}
+
+
+def execute_paste_fixed(text: str, flow_name: str = None) -> dict:
+    """固定テキストを貼り付け（フロー専用、テキストID不要）"""
+    if not text:
+        return {"status": "error", "message": "固定テキストが指定されていません"}
+
+    paste_text = text
+
+    # Grok系フローの場合、日本語で回答するよう指示を追加
+    if flow_name and ("Grok" in flow_name or "grok" in flow_name):
+        paste_text = paste_text + "\n\n※日本語で回答してください。"
+
+    pyperclip.copy(paste_text)
+    pyautogui.hotkey('ctrl', 'v')
+    display_text = text[:30] + "..." if len(text) > 30 else text
+    return {"status": "success", "message": f"[固定貼付] {display_text}"}
 
 
 def smooth_move_cursor(target_x: int, target_y: int, duration: float = 0.5):

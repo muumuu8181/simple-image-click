@@ -107,6 +107,8 @@
         .action-item .action-type.pagedown { background: #20c997; }
         .action-item.save_to_file { border-left-color: #e83e8c; }
         .action-item .action-type.save_to_file { background: #e83e8c; }
+        .action-item.paste_fixed { border-left-color: #20c997; }
+        .action-item .action-type.paste_fixed { background: #20c997; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .empty-message { color: #999; font-style: italic; text-align: center; padding: 20px; }
 
@@ -371,6 +373,8 @@
                     <button class="btn btn-secondary" onclick="addPagedownAction()" style="padding:5px 10px;font-size:11px;">PgDn</button>
                     <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
                     <button class="btn" onclick="addSaveToFileAction()" style="padding:5px 10px;font-size:11px;background:#e83e8c;color:white;">📄保存</button>
+                    <span style="color:#666;font-size:12px;margin-left:10px;">|</span>
+                    <button class="btn" onclick="showPasteFixedModal()" style="padding:5px 10px;font-size:11px;background:#20c997;color:white;">📝固定貼付</button>
                 </div>
                 <div id="actionList" class="action-list" style="max-height:400px;overflow-y:auto;">
                     <p class="empty-message">アクションを追加...</p>
@@ -515,6 +519,19 @@
             <div id="batchTextList" style="max-height:70vh;overflow-y:auto;"></div>
             <div class="modal-buttons" style="margin-top:15px;">
                 <button class="btn btn-secondary" onclick="hideBatchExecModal()">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 固定貼付モーダル -->
+    <div class="modal" id="pasteFixedModal">
+        <div class="modal-content" style="max-width:500px;">
+            <h3>📝 固定テキスト貼り付け</h3>
+            <p style="font-size:12px;color:#666;margin-bottom:10px;">フロー専用の固定テキストを設定します（テキスト一覧には登録されません）</p>
+            <textarea id="pasteFixedText" placeholder="貼り付けるテキストを入力..." style="width:100%;height:120px;padding:10px;border:1px solid #ccc;border-radius:4px;resize:vertical;"></textarea>
+            <div class="modal-buttons" style="margin-top:15px;">
+                <button class="btn btn-primary" onclick="addPasteFixedAction()">追加</button>
+                <button class="btn btn-secondary" onclick="hidePasteFixedModal()">キャンセル</button>
             </div>
         </div>
     </div>
@@ -862,6 +879,29 @@
             renderActions();
         }
 
+        // 固定貼付モーダル表示/非表示
+        function showPasteFixedModal() {
+            document.getElementById('pasteFixedText').value = '';
+            document.getElementById('pasteFixedModal').classList.add('show');
+            document.getElementById('pasteFixedText').focus();
+        }
+
+        function hidePasteFixedModal() {
+            document.getElementById('pasteFixedModal').classList.remove('show');
+        }
+
+        // 固定貼付アクション追加
+        function addPasteFixedAction() {
+            const text = document.getElementById('pasteFixedText').value.trim();
+            if (!text) {
+                alert('テキストを入力してください');
+                return;
+            }
+            insertAction({ type: 'paste_fixed', text: text });
+            renderActions();
+            hidePasteFixedModal();
+        }
+
         // アクション描画
         function renderActions() {
             const flowNameSpan = document.getElementById('loadedFlowName');
@@ -907,6 +947,9 @@
                     typeLabel = '貼付';
                     const textObj = texts[a.text_id];
                     desc = textObj ? `[${a.text_id}] ${textObj.text.substring(0, 20)}` : `[${a.text_id}] (削除済み)`;
+                } else if (a.type === 'paste_fixed') {
+                    typeLabel = '固定貼付';
+                    desc = a.text ? (a.text.length > 30 ? a.text.substring(0, 30) + '...' : a.text) : '(テキストなし)';
                 } else if (a.type === 'wait_disappear') {
                     typeLabel = '消失待機';
                     desc = a.image_name;
@@ -1141,6 +1184,9 @@
                     const textObj = texts[a.text_id];
                     const textPreview = textObj ? textObj.text.substring(0, 50) : '(削除済み)';
                     return `${i + 1}. 貼付, [ID:${a.text_id}] ${textPreview}`;
+                } else if (a.type === 'paste_fixed') {
+                    const textPreview = a.text ? (a.text.length > 50 ? a.text.substring(0, 50) + '...' : a.text) : '(テキストなし)';
+                    return `${i + 1}. 固定貼付, ${textPreview}`;
                 }
                 return `${i + 1}. ${a.type}`;
             });
