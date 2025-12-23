@@ -505,9 +505,17 @@ def run_actions_in_background(request_dict: dict):
 
             execution_state.add_result(result)
 
-            # 次のアクションまで待機（最後以外、成功時のみ）
+            # 次のアクションまで待機（最後以外、成功時のみ）- 1秒刻みで中止チェック
             if i < len(actions) - 1 and result["status"] == "success":
-                time.sleep(interval)
+                elapsed = 0
+                while elapsed < interval:
+                    if execution_abort_flag or execution_state.abort_flag:
+                        execution_state.add_result({"status": "aborted", "message": "[中止] アクション間待機中に中止されました"})
+                        execution_state.complete(False)
+                        return
+                    sleep_time = min(1.0, interval - elapsed)
+                    time.sleep(sleep_time)
+                    elapsed += sleep_time
 
         except Exception as e:
             import traceback
@@ -870,10 +878,18 @@ def execute_wait_disappear(image_name: str, confidence: float, timeout: float, c
 
 def execute_wait_seconds(seconds: float) -> dict:
     """指定秒数だけ待機（秒数待機）"""
+    global execution_abort_flag
     if seconds is None or seconds < 0:
         return {"status": "error", "message": "秒数が指定されていません"}
 
-    time.sleep(seconds)
+    # 1秒刻みで中止チェック
+    elapsed = 0
+    while elapsed < seconds:
+        if execution_abort_flag or execution_state.abort_flag:
+            return {"status": "aborted", "message": f"[秒数待機] {elapsed}/{seconds}秒で中止されました"}
+        sleep_time = min(1.0, seconds - elapsed)
+        time.sleep(sleep_time)
+        elapsed += sleep_time
     return {"status": "success", "message": f"[秒数待機] {seconds}秒待機しました"}
 
 
@@ -1079,9 +1095,15 @@ def execute_loop_click(image_name: str, confidence: float, min_confidence: float
                 "message": f"[ループクリック] {i + 1}/{loop_count}回完了 (成功: {success_count}, 失敗: {fail_count})"
             })
 
-        # 最後のループ以外は間隔待機
+        # 最後のループ以外は間隔待機 - 1秒刻みで中止チェック
         if i < loop_count - 1:
-            time.sleep(loop_interval)
+            elapsed = 0
+            while elapsed < loop_interval:
+                if execution_abort_flag or execution_state.abort_flag:
+                    return {"status": "aborted", "message": f"[ループクリック] {i+1}/{loop_count}回で中止 (成功: {success_count}, 失敗: {fail_count})"}
+                sleep_time = min(1.0, loop_interval - elapsed)
+                time.sleep(sleep_time)
+                elapsed += sleep_time
 
     return {"status": "success", "message": f"[ループクリック] {loop_count}回完了 (成功: {success_count}, 失敗: {fail_count})"}
 
