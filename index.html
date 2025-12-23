@@ -198,6 +198,13 @@
         .flow-item .flow-actions .delete-btn:hover { background: #c82333; }
         .flow-item .flow-checkbox { width: 18px; height: 18px; cursor: pointer; }
         .flow-item.selected { background: #e8daff; border-left-color: #6f42c1; }
+        .flow-item.suspended { opacity: 0.4; background: #d6d8db; border-left-color: #868e96; }
+        .flow-item.suspended .flow-name { color: #495057; text-decoration: line-through; }
+        .suspended-badge { background: #6c757d; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+        .flow-item .flow-actions .suspend-btn { background: #ffc107; color: #333; }
+        .flow-item .flow-actions .suspend-btn:hover { background: #e0a800; }
+        .flow-item .flow-actions .suspend-btn.active { background: #28a745; color: white; }
+        .flow-item .flow-actions .suspend-btn.active:hover { background: #218838; }
         .flow-order-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; background: #6f42c1; color: white; border-radius: 50%; font-size: 12px; font-weight: bold; flex-shrink: 0; }
         .flow-tab { padding: 6px 12px; border: 1px solid #ddd; background: #f8f9fa; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
         .flow-tab:hover { background: #e9ecef; }
@@ -373,7 +380,7 @@
                     <button class="btn btn-info" id="templateExecBtn" disabled onclick="showTemplateExecModal()">▶ テンプレ実行</button>
                     <button class="btn" id="batchExecBtn" onclick="showBatchExecModal()" style="background:#6f42c1;color:white;">▶ フローまとめて実行</button>
                     <button class="btn btn-purple" id="saveFlowBtn" disabled onclick="showSaveFlowModal()">💾 保存</button>
-                    <button class="btn btn-secondary" id="copyAllBtn" disabled onclick="copyActionsAndResult()">📋 全コピー</button>
+                    <button class="btn btn-secondary" id="copyAllBtn" disabled onclick="copyActionsAndResult(event)">📋 全コピー</button>
                     <button class="btn btn-secondary" onclick="clearActions()">クリア</button>
                 </div>
             </div>
@@ -1113,7 +1120,7 @@
         }
 
         // アクション一覧＋実行結果をクリップボードにコピー
-        function copyActionsAndResult() {
+        function copyActionsAndResult(event) {
             if (actions.length === 0) return;
             const lines = actions.map((a, i) => {
                 if (a.type === 'click') {
@@ -1692,14 +1699,16 @@
                 const orderBadge = orderNum > 0 ? `<span class="flow-order-badge">${orderNum}</span>` : '';
                 const groupBadge = flow.group ? `<span class="flow-group-badge ${flow.group}">${groupLabels[flow.group] || flow.group}</span>` : '';
                 return `
-                    <div class="flow-item ${isSelected ? 'selected' : ''}">
-                        <input type="checkbox" class="flow-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleFlowSelection('${escapedName}', this.checked)">
+                    <div class="flow-item ${isSelected ? 'selected' : ''} ${flow.suspended ? 'suspended' : ''}">
+                        <input type="checkbox" class="flow-checkbox" ${isSelected ? 'checked' : ''} ${flow.suspended ? 'disabled' : ''} onchange="toggleFlowSelection('${escapedName}', this.checked)">
                         ${orderBadge}
                         <span class="flow-name" onclick="loadFlow('${escapedName}')" title="クリックで読み込み">${escapedName}</span>
                         ${groupBadge}
+                        ${flow.suspended ? '<span class="suspended-badge">休止中</span>' : ''}
                         <span class="flow-meta">${actionCount}件 | ${flow.created_at || ''}</span>
                         <div class="flow-actions">
                             <button class="load-btn" onclick="loadFlow('${escapedName}')">読込</button>
+                            <button class="suspend-btn ${flow.suspended ? 'active' : ''}" onclick="toggleSuspend('${escapedName}')" title="${flow.suspended ? '再開' : '休止'}">${flow.suspended ? '▶️' : '⏸️'}</button>
                             <button class="rename-btn" onclick="showRenameFlowModal('${escapedName}')">名前変更</button>
                             <button class="group-btn" onclick="showChangeGroupModal('${escapedName}')" title="グループ変更">📁</button>
                             <button class="delete-btn" onclick="deleteFlow('${escapedName}')">削除</button>
@@ -1719,12 +1728,14 @@
             renderFlows();
         }
 
-        // タブ内の全フローをチェック
+        // タブ内の全フローをチェック（休止中は除外）
         function checkAllInTab() {
             let flowNames = Object.keys(flows);
             if (currentFlowGroup !== 'all') {
                 flowNames = flowNames.filter(name => flows[name].group === currentFlowGroup);
             }
+            // 休止中は除外
+            flowNames = flowNames.filter(name => !flows[name].suspended);
             flowNames.forEach(name => selectedFlows.add(name));
             renderFlows();
         }
@@ -1808,6 +1819,22 @@
             currentFlowName = name;  // フロー名を記憶
             selectedActionIndex = null;  // 選択をリセット
             renderActions();
+        }
+
+        // フロー休止/再開
+        async function toggleSuspend(name) {
+            const flow = flows[name];
+            const newSuspended = !flow.suspended;
+            await fetch(`/api/flows/${encodeURIComponent(name)}/suspend`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ suspended: newSuspended })
+            });
+            // 休止したらチェックを外す
+            if (newSuspended) {
+                selectedFlows.delete(name);
+            }
+            await loadFlows();
         }
 
         async function deleteFlow(name) {
