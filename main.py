@@ -15,6 +15,44 @@ from pydantic import BaseModel
 import shutil
 import pyautogui
 import pyperclip
+import pygetwindow as gw
+
+# ブラウザウィンドウ制御用
+saved_window_state = None
+
+def minimize_browser_window():
+    """ブラウザウィンドウを最小化して状態を保存"""
+    global saved_window_state
+    try:
+        # localhost:8000を含むウィンドウを探す
+        windows = gw.getWindowsWithTitle('Simple Image Click')
+        if not windows:
+            windows = gw.getWindowsWithTitle('localhost:8000')
+        if windows:
+            win = windows[0]
+            saved_window_state = {
+                'left': win.left,
+                'top': win.top,
+                'width': win.width,
+                'height': win.height,
+                'window': win
+            }
+            win.minimize()
+            print(f'[INFO] ウィンドウを最小化しました')
+    except Exception as e:
+        print(f'[WARN] ウィンドウ最小化失敗: {e}')
+
+def restore_browser_window():
+    """ブラウザウィンドウを復元"""
+    global saved_window_state
+    try:
+        if saved_window_state and saved_window_state.get('window'):
+            win = saved_window_state['window']
+            win.restore()
+            print(f'[INFO] ウィンドウを復元しました')
+            saved_window_state = None
+    except Exception as e:
+        print(f'[WARN] ウィンドウ復元失敗: {e}')
 
 app = FastAPI(title="Simple Image Click")
 
@@ -446,6 +484,9 @@ def run_actions_in_background(request_dict: dict):
                 flow_name_for_paste = a.get('flow_name')
                 break
 
+    # ブラウザウィンドウを最小化
+    minimize_browser_window()
+    
     # 開始前待機
     if start_delay > 0:
         execution_state.add_result({"status": "info", "message": f"[開始待機] {start_delay}秒待機中..."})
@@ -453,6 +494,7 @@ def run_actions_in_background(request_dict: dict):
         # 待機後に中止されていないか確認
         if execution_state.abort_flag or execution_abort_flag:
             execution_state.add_result({"status": "aborted", "message": f"[開始待機] 中止されました"})
+            restore_browser_window()
             execution_state.finish()
             return
 
@@ -533,6 +575,7 @@ def run_actions_in_background(request_dict: dict):
                 error_msg += f" [場所: {tb_lines[-2].strip()}]"
             execution_state.add_result({"status": "error", "message": error_msg})
 
+    restore_browser_window()
     execution_state.finish()
 
 

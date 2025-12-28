@@ -233,7 +233,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.75</div>
+    <div class="version">v0.76</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -548,6 +548,42 @@
         let editingTextId = null;
         let currentFlowName = null;  // 読み込んだフロー名を記憶
         let selectedActionIndex = null;  // 選択中のアクションインデックス（nullなら末尾に追加）
+
+        // ウィンドウ制御用（実行時に最小化）
+        let originalWindowState = null;
+
+        // ウィンドウを左下に小さく移動
+        function minimizeForExecution() {
+            try {
+                originalWindowState = {
+                    width: window.outerWidth,
+                    height: window.outerHeight,
+                    x: window.screenX,
+                    y: window.screenY
+                };
+                const targetWidth = 300;
+                const targetHeight = 200;
+                const targetX = 0;
+                const targetY = screen.availHeight - targetHeight;
+                window.resizeTo(targetWidth, targetHeight);
+                window.moveTo(targetX, targetY);
+            } catch (e) {
+                console.log('ウィンドウ制御不可:', e);
+            }
+        }
+
+        // ウィンドウを元に戻す
+        function restoreWindow() {
+            try {
+                if (originalWindowState) {
+                    window.resizeTo(originalWindowState.width, originalWindowState.height);
+                    window.moveTo(originalWindowState.x, originalWindowState.y);
+                    originalWindowState = null;
+                }
+            } catch (e) {
+                console.log('ウィンドウ復元不可:', e);
+            }
+        }
 
         // デフォルト設定値
         const DEFAULT_SETTINGS = {
@@ -1468,6 +1504,9 @@
                 const startResult = await res.json();
 
                 if (startResult.status === 'started') {
+                    // ウィンドウを最小化
+                    console.log('minimizeForExecution called');
+                    minimizeForExecution();
                     // ポーリング開始
                     startProgressPolling();
                 } else if (res.status === 409) {
@@ -1501,6 +1540,8 @@
                     clearInterval(pollingInterval);
                     pollingInterval = null;
                     document.getElementById('loading').classList.remove('show');
+                    // ウィンドウを元に戻す
+                    restoreWindow();
 
                     const successCount = status.results.filter(r => r.status === 'success').length;
                     showResult({
