@@ -97,6 +97,7 @@ class ExecutionState:
     def abort(self):
         with self.lock:
             self.abort_flag = True
+            self.is_running = False
 
     def get_status(self) -> dict:
         with self.lock:
@@ -114,6 +115,7 @@ execution_state = ExecutionState()
 
 # 後方互換用（古いコードで参照している場合）
 execution_abort_flag = False
+batch_abort_flag = False  # バッチ全体の中止フラグ
 
 # 設定
 IMAGES_DIR = Path(__file__).parent / "images"
@@ -387,17 +389,52 @@ async def get_settings():
 
 @app.post("/api/abort")
 async def abort_execution():
-    """実行を中止"""
+    """実行を中止（現在のフローのみ）"""
     global execution_abort_flag
     execution_abort_flag = True
     execution_state.abort()
+    print(f"[ABORT] 中止リクエスト受信: abort_flag={execution_state.abort_flag}, is_running={execution_state.is_running}")
     return {"success": True, "message": "中止フラグを設定しました"}
+
+
+@app.post("/api/abort-all")
+async def abort_all_execution():
+    """バッチ全体を中止（以降のフローも実行しない）"""
+    global execution_abort_flag, batch_abort_flag
+    execution_abort_flag = True
+    batch_abort_flag = True
+    execution_state.abort()
+    print(f"[ABORT-ALL] 全体中止リクエスト受信: batch_abort_flag={batch_abort_flag}")
+    return {"success": True, "message": "バッチ全体の中止フラグを設定しました", "batch_aborted": True}
+
+
+@app.post("/api/reset-batch")
+async def reset_batch():
+    """バッチ中止フラグをリセット（新しいバッチを開始可能に）"""
+    global batch_abort_flag
+    batch_abort_flag = False
+    print(f"[RESET-BATCH] バッチフラグをリセット")
+    return {"success": True, "message": "バッチフラグをリセットしました"}
 
 
 @app.get("/api/execute/status")
 async def get_execution_status():
     """実行状態を取得"""
     return execution_state.get_status()
+
+
+@app.post("/api/force-quit")
+async def force_quit():
+    """サーバーを強制終了（どうしても止まらない時用）"""
+    import os
+    import signal
+    print("[FORCE-QUIT] 強制終了リクエスト受信。サーバーを終了します。")
+    # 少し待ってからプロセスを終了（レスポンスを返すため）
+    def delayed_exit():
+        time.sleep(0.5)
+        os.kill(os.getpid(), signal.SIGTERM)
+    threading.Thread(target=delayed_exit).start()
+    return {"success": True, "message": "サーバーを終了します。start.batで再起動してください。"}
 
 
 @app.post("/api/upload")
@@ -582,7 +619,12 @@ def run_actions_in_background(request_dict: dict):
 @app.post("/api/execute")
 async def execute_actions(request: ExecuteRequest):
     """アクションを順番に実行する（バックグラウンド）"""
-    global execution_abort_flag
+    global execution_abort_flag, batch_abort_flag
+    
+    # バッチ全体中止フラグが立っていたら即座に拒否
+    if batch_abort_flag:
+        raise HTTPException(status_code=409, detail="バッチ全体が中止されています。新しいバッチを開始するには /api/reset-batch を呼んでください。")
+    
     execution_abort_flag = False  # 実行開始時にリセット
 
     if not request.actions:
@@ -644,6 +686,7 @@ def find_best_match_confidence(image_path: str, target_confidence: float) -> tup
 
 def execute_click(image_name: str, confidence: float, min_confidence: float = 0.7, max_retries: int = 2) -> dict:
     """画像をクリック（段階的に認識精度を下げて試行、リトライ付き）"""
+    global execution_abort_flag
     if not image_name:
         return {"status": "error", "message": "画像が指定されていません"}
 
@@ -652,9 +695,15 @@ def execute_click(image_name: str, confidence: float, min_confidence: float = 0.
         return {"status": "error", "message": f"画像ファイルが見つかりません: {image_name}"}
 
     for retry in range(max_retries):
+        # 中止チェック
+        if execution_abort_flag or execution_state.abort_flag:
+            return {"status": "aborted", "message": f"[クリック] 中止されました: {image_name}"}
         # 段階的に精度を下げて試す（浮動小数点誤差対策で0.001の余裕）
         current_conf = confidence
         while current_conf >= min_confidence - 0.001:
+            # 中止チェック
+            if execution_abort_flag or execution_state.abort_flag:
+                return {"status": "aborted", "message": f"[クリック] 中止されました: {image_name}"}
             try:
                 location = pyautogui.locateCenterOnScreen(str(image_path), confidence=current_conf)
                 if location is not None:
@@ -685,6 +734,10 @@ def execute_click(image_name: str, confidence: float, min_confidence: float = 0.
 
 def execute_click_if_exists(image_name: str, confidence: float, min_confidence: float = 0.7) -> dict:
     """画像が存在すればクリック、なければスキップ（エラーにしない）"""
+    global execution_abort_flag
+    # 中止チェック
+    if execution_abort_flag or execution_state.abort_flag:
+        return {"status": "aborted", "message": f"[条件クリック] 中止されました: {image_name}"}
     if not image_name:
         return {"status": "skipped", "message": "[スキップ] 画像が指定されていません"}
 
@@ -695,6 +748,9 @@ def execute_click_if_exists(image_name: str, confidence: float, min_confidence: 
     # 段階的に精度を下げて試す
     current_conf = confidence
     while current_conf >= min_confidence - 0.001:
+        # 中止チェック
+        if execution_abort_flag or execution_state.abort_flag:
+            return {"status": "aborted", "message": f"[条件クリック] 中止されました: {image_name}"}
         try:
             location = pyautogui.locateCenterOnScreen(str(image_path), confidence=current_conf)
             if location is not None:
@@ -715,13 +771,20 @@ def execute_click_if_exists(image_name: str, confidence: float, min_confidence: 
 
 def execute_click_or(image_names: list[str], confidence: float, min_confidence: float = 0.7, max_retries: int = 2) -> dict:
     """複数画像のうち最初に見つかった画像をクリック（段階的に精度を下げて試行、リトライ付き）"""
+    global execution_abort_flag
     if not image_names or len(image_names) == 0:
         return {"status": "error", "message": "画像が指定されていません"}
 
     for retry in range(max_retries):
+        # 中止チェック
+        if execution_abort_flag or execution_state.abort_flag:
+            return {"status": "aborted", "message": "[クリックOR] 中止されました"}
         # 各精度レベルで全画像を試す
         current_conf = confidence
         while current_conf >= min_confidence - 0.001:
+            # 中止チェック
+            if execution_abort_flag or execution_state.abort_flag:
+                return {"status": "aborted", "message": "[クリックOR] 中止されました"}
             for image_name in image_names:
                 image_path = IMAGES_DIR / image_name
                 if not image_path.exists():

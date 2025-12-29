@@ -233,7 +233,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v0.76</div>
+    <div class="version">v0.81</div>
     <div class="container">
         <h1>Simple Image Click</h1>
 
@@ -398,8 +398,12 @@
                 <div class="loading" id="loading">
                     <div class="spinner"></div>
                     <p style="margin-bottom:15px;">実行中...</p>
-                    <button id="abortBtn" onclick="abortExecution()" style="padding:20px 60px;font-size:24px;font-weight:bold;background:#dc3545;color:white;border:none;border-radius:12px;cursor:pointer;box-shadow:0 4px 15px rgba(220,53,69,0.4);">🛑 中止 (Esc)</button>
-                    <p style="margin-top:10px;font-size:14px;color:#666;">Escキーでも中止できます</p>
+                    <div style="display:flex;gap:15px;justify-content:center;flex-wrap:wrap;">
+                        <button id="abortBtn" onclick="abortExecution()" style="padding:15px 40px;font-size:18px;font-weight:bold;background:#ffc107;color:#000;border:none;border-radius:12px;cursor:pointer;box-shadow:0 4px 15px rgba(255,193,7,0.4);">⏭️ スキップ（次へ）</button>
+                        <button id="abortAllBtn" onclick="abortAllExecution()" style="padding:15px 40px;font-size:18px;font-weight:bold;background:#dc3545;color:white;border:none;border-radius:12px;cursor:pointer;box-shadow:0 4px 15px rgba(220,53,69,0.4);">🛑 全体中止 (Esc)</button>
+                    </div>
+                    <p style="margin-top:10px;font-size:14px;color:#666;">スキップ=このフロー中止→次へ / 全体中止=バッチ終了</p>
+                    <button id="forceQuitBtn" onclick="forceQuit()" style="margin-top:15px;padding:10px 30px;font-size:14px;background:#6c757d;color:white;border:none;border-radius:8px;cursor:pointer;">⚠️ 強制終了（サーバー再起動必要）</button>
                     <div id="progressList" style="text-align:left;margin-top:10px;font-size:12px;max-height:200px;overflow-y:auto;"></div>
                 </div>
                 <div class="result" id="result">
@@ -1296,6 +1300,9 @@
 
         async function executeWithTemplate(textId) {
             hideTemplateExecModal();
+            
+            // バッチフラグをリセット
+            await fetch('/api/reset-batch', { method: 'POST' }).catch(() => {});
 
             // アクションをコピーして貼付とファイル保存のtext_idを差し替え
             const templateActions = actions.map(a => {
@@ -1473,6 +1480,9 @@
 
         // 実行
         async function executeActions() {
+            // バッチフラグをリセット（前回の全体中止が残っていても実行できるように）
+            await fetch('/api/reset-batch', { method: 'POST' }).catch(() => {});
+            
             const interval = parseFloat(document.getElementById('interval').value) || 2;
             const confidence = parseFloat(document.getElementById('confidence').value) || 0.95;
             const minConfidence = parseFloat(document.getElementById('minConfidence').value) || 0.7;
@@ -1552,6 +1562,11 @@
                 }
             } catch (e) {
                 console.error('ポーリングエラー:', e);
+                // サーバー接続エラーの場合、ポーリングを停止
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                document.getElementById('loading').classList.remove('show');
+                document.getElementById('progressList').innerHTML += '<div style="color:#ff6600;font-weight:bold;">⚠️ サーバーとの接続が切れました。start.batで再起動してください。</div>';
             }
         }
 
@@ -1614,14 +1629,41 @@
             });
         }
 
-        // 中止リクエスト
+        // 中止リクエスト（このフローのみ）
         async function abortExecution() {
             try {
                 await fetch('/api/abort', { method: 'POST' });
                 const progressList = document.getElementById('progressList');
-                progressList.innerHTML += '<div style="color:#dc3545;">🛑 中止リクエスト送信...</div>';
+                progressList.innerHTML += '<div style="color:#ffc107;">⏭️ スキップリクエスト送信（次のフローへ）...</div>';
             } catch (e) {
                 console.error('中止リクエスト失敗:', e);
+            }
+        }
+
+        // 全体中止リクエスト（バッチ全体）
+        async function abortAllExecution() {
+            try {
+                await fetch('/api/abort-all', { method: 'POST' });
+                const progressList = document.getElementById('progressList');
+                progressList.innerHTML += '<div style="color:#dc3545;">🛑 全体中止リクエスト送信...</div>';
+            } catch (e) {
+                console.error('全体中止リクエスト失敗:', e);
+            }
+        }
+
+        // 強制終了（サーバーごと終了）
+        async function forceQuit() {
+            if (!confirm('サーバーを強制終了します.\n再度使用するにはstart.batで再起動が必要です.\n\n本当に強制終了しますか?')) {
+                return;
+            }
+            try {
+                await fetch('/api/force-quit', { method: 'POST' });
+                document.getElementById('progressList').innerHTML += '<div style="color:#ff6600;">⚠️ 強制終了しました.start.batで再起動してください.</div>';
+                document.getElementById('loading').classList.remove('show');
+                alert('サーバーを終了しました.\nstart.batをダブルクリックして再起動してください.');
+            } catch (e) {
+                document.getElementById('loading').classList.remove('show');
+                alert('サーバーを終了しました.\nstart.batをダブルクリックして再起動してください.');
             }
         }
 
@@ -2013,7 +2055,7 @@
                 if (e.key === 'Escape') {
                     const loading = document.getElementById('loading');
                     if (loading.classList.contains('show')) {
-                        abortExecution();
+                        abortAllExecution();
                     }
                 }
             });
@@ -2136,6 +2178,9 @@
                 const startDelay = parseFloat(document.getElementById('startDelay').value) || 0;
                 logs.push(`設定: interval=${interval}, confidence=${confidence}, waitTimeout=${waitTimeout}, cursorSpeed=${cursorSpeed}, startDelay=${startDelay}`);
 
+            // バッチフラグをリセット
+            await fetch('/api/reset-batch', { method: 'POST' });
+            
             // ローディング表示
             document.getElementById('loading').classList.add('show');
             document.getElementById('result').className = 'result';
@@ -2222,6 +2267,13 @@
                     allResults.push({ flowName, result: { success: false, message: 'エラー: ' + e.message, details: [] } });
                 }
 
+                // バッチ全体中止チェック
+                const batchStatus = await fetch('/api/execute/status').then(r => r.json()).catch(() => ({}));
+                if (batchStatus.aborted) {
+                    logs.push('🛑 バッチ全体が中止されました');
+                    break;
+                }
+                
                 if (i < flowNames.length - 1) {
                     await new Promise(r => setTimeout(r, interval * 1000));
                 }
